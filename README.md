@@ -75,21 +75,59 @@ Markdown# 💊 PillSync: Intelligent Medicine Reminder & Medication Tracking Pla
                                       🌐 DEPLOYMENT & INFRASTRUCTURE
           [🐳 Docker Containers]   [☸️ Kubernetes Pods]   [☁️ AWS / Azure Cloud]   [🛠️ CI/CD Pipelines]
    =====================================================================================================
-⚙️ Core Functional Modules1. Robust Authentication & RBAC MatrixStateless Token Management: Implements JWT and OAuth2 for access verification.  Patient Workflows: Full individual schedule autonomy, digital script upload interfaces, and health-compliance tracking charts.  Caregiver Linkages: Multi-patient cross-monitoring access profiles triggering immediate notifications if a dependent misses critical medication.  System Administration: Audits system events, coordinates client linkages, and tracks operational dashboard metrics.  2. AI-Driven Ingestion & Parsing (OCR)Processes prescription documentation and pillbox labels using advanced Tesseract OCR parsing pipelines.  Employs tokenizers to isolate parameters including Medicine Nomenclature, Dosage Metrics, Package Quantities, and Daily Frequencies.  3. Predictive AI Refill Mathematical EngineThe forecasting engine tracks remaining pill inventories by monitoring dosage consumption rates against baseline counts:  $$\text{Remaining Stock} = \text{Initial Quantity} - (\text{Elapsed Days} \times \text{Daily Frequency} \times \text{Dose Quantity}) + \text{Missed Doses}$$$$\text{Estimated Stock Depletion Date} = \frac{\text{Current Remaining Stock}}{\text{Average Daily Consumption}}$$Deterministic Workflow Example: A user updates stock metrics with 60 Tablets, on a routine needing 2 Tablets per Day. The engine evaluates longevity through clear integer steps:
-  $$60 \div 2 = 30 \text{ Days of Stock Available}$$The notification routine triggers low-stock alerts 5 days prior to exhaustion: "Your BP medicine is expected to finish in 5 days. Please arrange a refill."   🛠️ Complete Production Tech StackCategoryComponent TechnologiesBackend FrameworksPython 3.11+, FastAPI, Django REST Framework (DRF)   Frontend InterfacesReact.js, Tailwind CSS, Axios, Redux State Architecture   Data ArchitecturePostgreSQL (Relational Core), SQLite (Local Dev), Redis (Session Cache)   AI / NLP ModulesTesseract OCR engine, spaCy Processing Models, OpenAI API endpoints   Notification ServicesFirebase Cloud Messaging (FCM), Twilio API, SendGrid Gateway   Infrastructure / DevOpsDocker Engine, Kubernetes, AWS/Azure Ecosystems, GitHub Actions   Testing ArchitecturePytest, Django Test Client, Jest Framework, React Testing Library   📅 Chronological Implementation Roadmap 📊 MILESTONE 1 (Weeks 1-2): Core Environments & Secure Access Base
- ├── Configuration of PostgreSQL engines, setup of FastAPI base frames, and integration of RBAC token flows[cite: 249, 254, 255].
- 
- 💊 MILESTONE 2 (Weeks 3-4): Dosage Planners & Omni-Channel Reminders
- ├── Development of scheduling components, history logging stores, and push alert triggers[cite: 262, 264, 265, 267].
- 
- 👁️ MILESTONE 3 (Weeks 5-6): OCR Ingestion Models & AI Refill Engines
- ├── Image processing pipeline creation, NLP parsing modules, and depletion analytics[cite: 275, 276, 277, 280].
- 
- 📈 MILESTONE 4 (Weeks 7-8): Advanced Dashboards, Infrastructure Deployment & QA
- └── UI graph deployments, end-to-end integration tests (Pytest/Jest), and cloud orchestration via CI/CD pipelines[cite: 286, 287, 290, 291].
-🚀 Installation & Local Environment SetupPrerequisitesEnsure Docker and Docker Compose are installed on your workstation.Python 3.10+ runtime workspace setup.1. Configuration SetupClone the platform codebase repository and generate your environment file from the provided sample:Bashgit clone [https://github.com/your-username/PillSync.git](https://github.com/your-username/PillSync.git)
+
+
+## ⚙️ Core Modules
+
+### 1. Auth & RBAC
+* [cite_start]**Security:** Stateless verification via JWT and OAuth2[cite: 110, 111].
+* [cite_start]**Patients:** Manage schedules, upload prescriptions, and track compliance[cite: 118, 119, 120].
+* [cite_start]**Caregivers:** Cross-monitor patient profiles with missed-dose alerts[cite: 125, 126, 129].
+* [cite_start]**Admins:** System auditing, user assignments, and platform analytics[cite: 131, 132, 134].
+
+### 2. AI Ingestion (OCR)
+* [cite_start]Processes prescriptions and labels via Tesseract OCR[cite: 63, 147, 148, 324].
+* [cite_start]Extracts **Medicine Name**, **Dosage**, **Quantity**, and **Frequency**[cite: 151, 152, 153, 154].
+
+### 3. Predictive Refill Engine
+[cite_start]Tracks inventory levels using consumption velocity[cite: 67, 183]:
+
+$$\text{Remaining Stock} = \text{Initial Qty} - (\text{Days} \times \text{Freq} \times \text{Dose}) + \text{Missed Doses}$$
+
+$$\text{Depletion Date} = \frac{\text{Remaining Stock}}{\text{Daily Consumption}}$$
+
+> [cite_start]**Example:** Starting with **60 tablets** and taking **2 per day** lasts exactly 30 days ($60 \div 2 = 30$)[cite: 207, 208, 210]. [cite_start]Low-stock alerts trigger 5 days before depletion[cite: 212].
+
+---
+
+## 🛠️ Tech Stack
+
+* [cite_start]**Backend:** Python (FastAPI / DRF) [cite: 324]
+* [cite_start]**Frontend:** React.js, Tailwind CSS, Redux [cite: 324]
+* [cite_start]**Databases:** PostgreSQL, SQLite, Redis [cite: 324]
+* [cite_start]**AI / OCR:** Tesseract OCR, spaCy, OpenAI API [cite: 324]
+* [cite_start]**Notifications:** FCM (Firebase), Twilio, SendGrid [cite: 324, 325]
+* [cite_start]**DevOps:** Docker, Kubernetes, AWS/Azure, GitHub Actions [cite: 324]
+
+---
+
+## 📅 Roadmap
+
+* [cite_start]**Weeks 1-2 (Milestone 1):** Environment setup, PostgreSQL config, and core auth[cite: 249, 254, 255].
+* [cite_start]**Weeks 3-4 (Milestone 2):** Dosage scheduling, history logs, and notifications[cite: 262, 264, 265, 267].
+* [cite_start]**Weeks 5-6 (Milestone 3):** OCR extraction pipeline and refill prediction logic[cite: 275, 276, 277].
+* [cite_start]**Weeks 7-8 (Milestone 4):** Analytics dashboards, cloud deployment, and testing[cite: 286, 287, 290, 291].
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+* Docker & Docker Compose
+* Python 3.10+ Workspace
+
+### 1. Setup Environment
+```bash
+git clone [https://github.com/your-username/PillSync.git](https://github.com/your-username/PillSync.git)
 cd PillSync
 cp .env.example .env
-💡 Note: Fill in the .env file with your corresponding Firebase configurations, database server endpoints, and Twilio developer keys.2. Multi-Container OrchestrationBuild application services and spin up dependencies concurrently via Docker Compose:Bashdocker-compose up --build -d
-3. Structural Database MigrationsExecute active migrations across application backend systems to initialize database state:Bashdocker-compose exec backend alembic upgrade head
-4. Interface VerificationOpen your browser and access interactive API endpoints via the built-in Swagger / OpenAPI UI: http://localhost:8000/docsTrack frontend development systems and access the interactive user dashboard context: http://localhost:3000
