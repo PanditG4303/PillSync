@@ -1,14 +1,8 @@
 Markdown# 💊 PillSync: Intelligent Medicine Reminder & Medication Tracking Platform
-
-[cite_start]PillSync is an AI-powered digital healthcare platform designed to automate medication adherence, predict stock depletion, and create a resilient care bridge between patients, caregivers, and administrators[cite: 3, 5, 6]. [cite_start]By combining **Optical Character Recognition (OCR)** text extraction with predictive analytics, PillSync shifts chronic health management from reactive tracking to proactive automated care[cite: 7, 13, 15].
+PillSync is an AI-powered digital healthcare platform designed to automate medication adherence, predict stock depletion, and create a resilient care bridge between patients, caregivers, and administrators. By combining **Optical Character Recognition (OCR)** text extraction with predictive analytics, PillSync shifts chronic health management from reactive tracking to proactive automated care.
 
 ---
 
-## 🎨 System Highlights & Infographics
-
-┌─────────────────────────────────────────────────────────────────────────┐│                          PILLSYNC EDGE MATRIX                           │├───────────────────┬──────────────────────────────┬──────────────────────┤│  👤 PATIENT COMPASS │  🤖 ADVANCED AI INGESTION      │  📡 OMNICHANNEL LINK  ││                   │                              │                      ││  • Micro-Schedules│  • OCR Prescription Parsing  │  • WhatsApp Alerts   ││  • Refill Forecast│  • Automated Label Tracking  │  • SMS & Push        ││  • Adherence Logs │  • Smart Token Generation    │  • Caregiver Paging  │└───────────────────┴──────────────────────────────┴──────────────────────┘
-### 📱 Core Ecosystem Interface Layout
-```text
   [ ====== 📊 PATIENT DASHBOARD ====== ]       [ ====== 🔔 SMART ALERTS ====== ]
   |  +------------------------------+  |       |  ┌──────────────────────────┐  |
   |  |  MORNING DOSE: METFORMIN     |  |       |  │  ⚠️ LOW STOCK DETECTED     │  |
@@ -72,8 +66,7 @@ Markdown# 💊 PillSync: Intelligent Medicine Reminder & Medication Tracking Pla
                                                   │
                                                   ▼
    =====================================================================================================
-                                      🌐 DEPLOYMENT & INFRASTRUCTURE
-          [🐳 Docker Containers]   [☸️ Kubernetes Pods]   [☁️ AWS / Azure Cloud]   [🛠️ CI/CD Pipelines]
+                                      🌐 DEPLOYMENT & TESTING
    =====================================================================================================
 
 
