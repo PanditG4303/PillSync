@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Bot, Send, Sparkles, Pill, AlertTriangle, Book, MessageCircle, Brain, Clock } from 'lucide-react'
-import { aiSuggestedPrompts, aiChatHistory, medicineList } from '../data'
+import { aiSuggestedPrompts, aiChatHistory } from '../data'
 import { useTheme } from '../components/ThemeContext'
 import { AIBotIllustration } from '../components/illustrations'
+import API from '../api'
 
 function ChatMessage({ role, text }) {
   const { theme } = useTheme()
@@ -60,7 +61,7 @@ function SuggestedPrompt({ text, onClick }) {
   )
 }
 
-function EmptyState() {
+function EmptyState({ onPrompt }) {
   const { theme } = useTheme()
   const isLight = theme === 'light'
   return (
@@ -73,7 +74,6 @@ function EmptyState() {
         <p className={`text-sm leading-relaxed max-w-sm mx-auto ${isLight ? 'text-navy-400' : 'text-white/50'}`}>
           Ask me anything about your medications — dosages, side effects, interactions, and more.
         </p>
-
         <div className="mt-8 grid grid-cols-2 gap-3 max-w-md mx-auto">
           {[
             { icon: Pill, label: 'Check Dosage', prompt: 'What are my current dosages?', color: isLight ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
@@ -85,8 +85,7 @@ function EmptyState() {
               key={label}
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
-              onClick={() => null}
-              onMouseDown={() => { /* handled by parent's handlePrompt */ }}
+              onClick={() => onPrompt?.(prompt)}
               className={`flex items-center gap-2.5 p-3.5 rounded-2xl border text-sm font-medium transition-all ${color} hover:scale-[1.02]`}
             >
               <Icon className="w-4 h-4 shrink-0" />
@@ -94,16 +93,19 @@ function EmptyState() {
             </motion.button>
           ))}
         </div>
-
         <div className="mt-6">
           <p className={`text-xs mb-3 ${isLight ? 'text-navy-400' : 'text-white/30'}`}>Or try one of these questions</p>
           <div className="flex flex-wrap justify-center gap-2">
             {aiSuggestedPrompts.map((prompt) => (
-              <span key={prompt} className={`px-3 py-1.5 rounded-full text-xs border ${
-                isLight ? 'bg-navy-50 text-navy-400 border-navy-200' : 'bg-white/[0.04] text-white/40 border-white/[0.06]'
-              }`}>
+              <button
+                key={prompt}
+                onClick={() => onPrompt?.(prompt)}
+                className={`px-3 py-1.5 rounded-full text-xs border cursor-pointer transition-colors ${
+                  isLight ? 'bg-navy-50 text-navy-400 border-navy-200 hover:bg-navy-100' : 'bg-white/[0.04] text-white/40 border-white/[0.06] hover:bg-white/[0.08]'
+                }`}
+              >
                 {prompt}
-              </span>
+              </button>
             ))}
           </div>
         </div>
@@ -132,29 +134,6 @@ function QuickActionChip({ icon: Icon, label, onClick }) {
   )
 }
 
-function MedicineCard({ med }) {
-  const { theme } = useTheme()
-  const isLight = theme === 'light'
-  return (
-    <div className={`flex items-center gap-3 p-3 rounded-2xl border ${
-      isLight ? 'bg-white border-navy-100' : 'bg-white/[0.04] border-white/[0.08]'
-    }`}>
-      <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-        isLight ? 'bg-emerald-100 text-emerald-600' : 'bg-emerald-500/20 text-emerald-400'
-      }`}>
-        <Pill className="w-4 h-4" />
-      </div>
-      <div className="flex-1">
-        <p className={`text-sm font-medium ${isLight ? 'text-navy-700' : 'text-white/90'}`}>{med.name}</p>
-        <p className={`text-xs ${isLight ? 'text-navy-400' : 'text-white/40'}`}>{med.dose} - {med.frequency}</p>
-      </div>
-      <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
-        isLight ? 'bg-emerald-100 text-emerald-700' : 'bg-emerald-500/20 text-emerald-400'
-      }`}>{med.time}</span>
-    </div>
-  )
-}
-
 export default function AIAssistant() {
   const [messages, setMessages] = useState(aiChatHistory)
   const [input, setInput] = useState('')
@@ -163,6 +142,11 @@ export default function AIAssistant() {
   const { theme } = useTheme()
   const isLight = theme === 'light'
   const inputRef = useRef(null)
+  const [medicines, setMedicines] = useState([])
+
+  useEffect(() => {
+    API.get('/medicines').then(res => setMedicines(res.data || [])).catch(() => {})
+  }, [])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -178,13 +162,22 @@ export default function AIAssistant() {
     setTimeout(() => {
       const responses = {
         'What does Aspirin do?': 'Aspirin is a nonsteroidal anti-inflammatory drug (NSAID) used to reduce pain, inflammation, and fever. At low doses (75-100mg), it is commonly used as a blood thinner to prevent heart attacks and strokes.',
-        'Explain my prescription': 'Based on your active medications:\n\n• **Aspirin 100mg** — Twice daily for heart health\n• **Metformin 500mg** — Once daily for blood sugar control\n• **Vitamin D 2000 IU** — Once daily for bone health\n\nAlways follow your doctor\'s instructions.',
+        'Explain my prescription': medicines.length > 0
+          ? `Based on your active medications:\n\n${medicines.map(m => `• **${m.name}** ${m.dosage}${m.dosage_unit} — ${m.schedules?.length || 0} time(s) daily`).join('\n')}\n\nAlways follow your doctor's instructions.`
+          : "You don't have any medicines added yet. Add medicines in the Medicines page first.",
         'Side effects of Metformin': 'Common side effects of Metformin include nausea, diarrhea, stomach upset, and a metallic taste. These usually improve over time. Serious side effects are rare but include lactic acidosis — seek medical help if you experience muscle pain, trouble breathing, or unusual drowsiness.',
-        'Medicine interactions': 'Your current medications have no major interactions. Aspirin and Metformin can be taken together safely. Vitamin D has no known interactions with your other medications. Always consult your doctor before starting new medications.',
-        'My tomorrow schedule': 'Your schedule for tomorrow:\n\n• **08:00 AM** — Aspirin 100mg + Vitamin D 2000 IU\n• **01:00 PM** — Metformin 500mg\n• **08:00 PM** — Aspirin 100mg\n\nTotal: 4 doses. Stay hydrated!',
-        'What are my current dosages?': 'Your current dosages:\n\n• **Aspirin**: 100mg twice daily\n• **Metformin**: 500mg once daily\n• **Vitamin D**: 2000 IU once daily\n\nAlways follow your prescribed dosage.',
-        'What are the side effects of my medications?': 'Here are common side effects for your medications:\n\n**Aspirin**: Heartburn, nausea, increased bleeding risk\n**Metformin**: Nausea, diarrhea, metallic taste\n**Vitamin D**: Generally well-tolerated\n\nConsult your doctor if symptoms persist.',
-        'Any medicine interactions?': 'Your current medications have no major interactions. Aspirin and Metformin can be taken together safely. Vitamin D has no known interactions with your other medications.',
+        'Medicine interactions': 'Your current medications have no major interactions. Always consult your doctor before starting new medications.',
+        'My tomorrow schedule': medicines.length > 0
+          ? `Your schedule:\n\n${medicines.filter(m => m.is_active).map(m => {
+              const times = m.schedules?.map(s => `• **${s.reminder_time}** — ${m.name} ${m.dosage}${m.dosage_unit}`).join('\n') || ''
+              return times
+            }).filter(Boolean).join('\n') || 'No active schedules.'}`
+          : "You don't have any medicines scheduled yet.",
+        'What are my current dosages?': medicines.length > 0
+          ? `Your current dosages:\n\n${medicines.map(m => `• **${m.name}**: ${m.dosage}${m.dosage_unit}`).join('\n')}\n\nAlways follow your prescribed dosage.`
+          : "You don't have any medicines added yet.",
+        'What are the side effects of my medications?': 'Common side effects vary by medication. Consult your doctor if symptoms persist.',
+        'Any medicine interactions?': 'Your current medications have no major interactions. Always consult your doctor before starting new medications.',
       }
       const reply = responses[msg] || getGenericResponse(msg)
       setMessages((prev) => [...prev, { role: 'assistant', text: reply }])
@@ -195,15 +188,17 @@ export default function AIAssistant() {
   const getGenericResponse = (msg) => {
     const lower = msg.toLowerCase()
     if (lower.includes('side effect')) {
-      return 'I can help with side effect information! Please specify which medication you\'d like to know about. Your current medications are: Aspirin 100mg, Metformin 500mg, and Vitamin D 2000 IU.'
+      return 'I can help with side effect information! Please specify which medication you\'d like to know about.'
     }
     if (lower.includes('dose') || lower.includes('dosage') || lower.includes('how much')) {
-      return 'Your current dosages:\n• Aspirin: 100mg twice daily\n• Metformin: 500mg once daily\n• Vitamin D: 2000 IU once daily\n\nAlways follow your prescribed dosage.'
+      return medicines.length > 0
+        ? `Your current dosages:\n${medicines.map(m => `• ${m.name}: ${m.dosage}${m.dosage_unit}`).join('\n')}`
+        : "You don't have any medicines added yet."
     }
     if (lower.includes('hello') || lower.includes('hi') || lower.includes('hey')) {
       return 'Hello! I\'m your AI medication assistant. How can I help you today? You can ask me about your medications, dosages, side effects, or schedule.'
     }
-    return `I understand your question about "${msg}". For the most accurate and personalized information, please consult your healthcare provider. I can help with general medication information, dosage queries, and schedule lookups. What would you like to know specifically?`
+    return `I understand your question about "${msg}". For the most accurate and personalized information, please consult your healthcare provider.`
   }
 
   const handlePrompt = (prompt) => {
@@ -229,7 +224,7 @@ export default function AIAssistant() {
 
         <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
           {messages.length <= 1 && !isTyping ? (
-            <EmptyState />
+            <EmptyState onPrompt={handlePrompt} />
           ) : (
             <>
               {messages.slice(1).map((msg, i) => (
@@ -258,13 +253,23 @@ export default function AIAssistant() {
           )}
         </div>
 
-        {messages.length > 1 && !isTyping && medicineList.length > 0 && (
+        {messages.length > 1 && !isTyping && medicines.length > 0 && (
           <div className={`shrink-0 px-4 py-3 border-t ${isLight ? 'border-navy-100' : 'border-white/[0.06]'}`}>
             <p className={`text-xs mb-2 ${isLight ? 'text-navy-400' : 'text-white/30'}`}>Your medicines</p>
             <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
-              {medicineList.slice(0, 3).map((med) => (
-                <div key={med.id} className="shrink-0">
-                  <MedicineCard med={med} />
+              {medicines.slice(0, 3).map((med) => (
+                <div key={med.id} className={`flex items-center gap-3 p-3 rounded-2xl border shrink-0 ${
+                  isLight ? 'bg-white border-navy-100' : 'bg-white/[0.04] border-white/[0.08]'
+                }`}>
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+                    isLight ? 'bg-emerald-100 text-emerald-600' : 'bg-emerald-500/20 text-emerald-400'
+                  }`}>
+                    <Pill className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1">
+                    <p className={`text-sm font-medium ${isLight ? 'text-navy-700' : 'text-white/90'}`}>{med.name}</p>
+                    <p className={`text-xs ${isLight ? 'text-navy-400' : 'text-white/40'}`}>{med.dosage}{med.dosage_unit}</p>
+                  </div>
                 </div>
               ))}
             </div>
@@ -309,7 +314,7 @@ export default function AIAssistant() {
           </div>
 
           {messages.length <= 1 && !isTyping && (
-            <div className={`px-4 pb-4 ${isLight ? '' : ''}`}>
+            <div className="px-4 pb-4">
               <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide pb-1">
                 {aiSuggestedPrompts.map((prompt) => (
                   <SuggestedPrompt key={prompt} text={prompt} onClick={handlePrompt} />

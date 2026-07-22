@@ -12,7 +12,7 @@ export default function Register() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const [loading, setLoading] = useState(false)
-  const { register, guestLogin } = useAuth()
+  const { register } = useAuth()
   const { theme } = useTheme()
   const navigate = useNavigate()
 
@@ -33,11 +33,6 @@ export default function Register() {
     } finally {
       setLoading(false)
     }
-  }
-
-  const handleGuest = () => {
-    guestLogin()
-    navigate('/dashboard')
   }
 
   return (
@@ -239,19 +234,6 @@ export default function Register() {
                 <Github className="w-4 h-4" /> GitHub
               </motion.button>
             </div>
-
-            <motion.button
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.99 }}
-              onClick={handleGuest}
-              className={`w-full mt-3 py-3 rounded-2xl border border-dashed text-sm transition-all duration-200 ${
-                theme === 'light'
-                  ? 'border-navy-200 text-navy-400 hover:text-navy-600 hover:border-navy-300'
-                  : 'border-white/[0.12] text-white/40 hover:text-white/70 hover:border-white/[0.20]'
-              }`}
-            >
-              Continue as Guest
-            </motion.button>
 
             <p className={`text-center text-sm mt-6 ${theme === 'light' ? 'text-navy-400' : 'text-white/40'}`}>
               Already have an account?{' '}

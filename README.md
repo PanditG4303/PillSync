@@ -1,5 +1,9 @@
 # 💊 PillSync: Intelligent Medicine Reminder & Tracking Platform
+run the project, 
+pip install -r requirements.txt
+>> python -m uvicorn app:app --reload
 
+frontend , npm run dev
 PillSync is an AI-powered digital healthcare platform designed to automate medication adherence, predict stock depletion, and bridge communication between patients, caregivers, and administrators. 
 
 <img width="667" height="588" alt="image" src="https://github.com/user-attachments/assets/02b24259-e3de-470e-8881-6990aee0a096" />
