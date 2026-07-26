@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './components/AuthContext'
 import { ThemeProvider, useTheme } from './components/ThemeContext'
@@ -31,6 +32,40 @@ function BackgroundBlobs() {
 function AppLayout() {
   const { isAuthenticated } = useAuth()
   const { theme } = useTheme()
+  const setupRan = useRef(false)
+
+  useEffect(() => {
+    if (!isAuthenticated) return
+    if (setupRan.current) return
+    setupRan.current = true
+    let cancelled = false
+    import('./firebase').then(async (m) => {
+      if (cancelled) return
+      m.initFirebase()
+      m.onForegroundMessage((payload) => {
+        console.log('[FCM] Foreground message received')
+        const data = payload.data || {}
+        const title = data.title || 'Medicine Reminder'
+        const body = data.body || 'Time to take your medicine'
+        const swReg = m.getSwRegistration()
+        if (swReg) {
+          swReg.showNotification(title, {
+            body: body,
+            icon: '/favicon.ico',
+            badge: '/favicon.ico',
+          })
+        } else if (Notification.permission === 'granted') {
+          new Notification(title, {
+            body: body,
+            icon: '/favicon.ico',
+          })
+        }
+        window.dispatchEvent(new CustomEvent('pillsync:reminders-updated', { detail: payload }))
+      })
+      await m.requestNotificationPermission()
+    })
+    return () => { cancelled = true }
+  }, [isAuthenticated])
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />

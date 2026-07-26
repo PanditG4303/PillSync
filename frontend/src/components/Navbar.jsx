@@ -1,18 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
-import { Bell, Search, User, ChevronDown, LogOut, Settings as SettingsIcon, HelpCircle, Sparkles, Sun, Moon, Pill, BarChart3, Clock, Bot, ScanLine } from 'lucide-react'
+import { Bell, Search, User, ChevronDown, LogOut, Settings as SettingsIcon, HelpCircle, Sparkles, Sun, Moon } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from './AuthContext'
 import { useTheme } from './ThemeContext'
 import { useNavigate } from 'react-router-dom'
-import { medicineList, dummyLogs } from '../data'
-
-const searchableData = [
-  ...medicineList.map(m => ({ label: m.name, sub: `${m.dose} - ${m.frequency}`, type: 'Medicine', icon: Pill, route: '/add-medicine' })),
-  ...dummyLogs.map(l => ({ label: `${l.name} ${l.dose}`, sub: `${l.status} - ${l.date}`, type: 'History', icon: Clock, route: '/history' })),
-  { label: 'Adherence Report', sub: 'Weekly adherence analytics', type: 'Report', icon: BarChart3, route: '/reports' },
-  { label: 'AI Assistant', sub: 'Ask about medications', type: 'AI', icon: Bot, route: '/ai-assistant' },
-  { label: 'Prescription Scanner', sub: 'Scan with AI', type: 'Scanner', icon: ScanLine, route: '/ai-scanner' },
-]
+import API from '../api'
 
 export default function Navbar() {
   const [query, setQuery] = useState('')
@@ -20,18 +12,82 @@ export default function Navbar() {
   const [showProfile, setShowProfile] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const [searchResults, setSearchResults] = useState([])
+  const [notifications, setNotifications] = useState([])
   const { user, logout } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const navigate = useNavigate()
   const searchInputRef = useRef(null)
   const searchResultsRef = useRef(null)
 
-  const filtered = query.trim()
-    ? searchableData.filter(item =>
-        item.label.toLowerCase().includes(query.toLowerCase()) ||
-        item.sub.toLowerCase().includes(query.toLowerCase())
+  const [notifBadge, setNotifBadge] = useState(0)
+
+  const fetchNotifications = async () => {
+    try {
+      const res = await API.get('/reminders/today')
+      const pending = (res.data.reminders || []).filter(r => r.status === 'pending')
+      setNotifBadge(pending.length)
+      setNotifications(
+        pending.slice(0, 5).map(r => ({
+          text: `Time to take ${r.medicine_name}`,
+          time: r.scheduled_datetime
+            ? new Date(r.scheduled_datetime + '+05:30').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : '',
+          type: 'reminder',
+        }))
       )
-    : []
+    } catch {
+      setNotifications([])
+      setNotifBadge(0)
+    }
+  }
+
+  const handleBellClick = () => {
+    setShowNotifications(!showNotifications)
+    setShowProfile(false)
+    if (!showNotifications) {
+      fetchNotifications()
+    }
+  }
+
+  useEffect(() => {
+    fetchNotifications()
+    const interval = setInterval(fetchNotifications, 30000)
+    const handleRefresh = () => fetchNotifications()
+    window.addEventListener('pillsync:reminders-updated', handleRefresh)
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('pillsync:reminders-updated', handleRefresh)
+    }
+  }, [])
+
+  useEffect(() => {
+    const fetchSearch = async () => {
+      if (!query.trim()) {
+        setSearchResults([])
+        return
+      }
+      try {
+        const res = await API.get('/medicines')
+        const meds = (res.data || []).filter(m =>
+          m.name.toLowerCase().includes(query.toLowerCase()) ||
+          (m.dosage && m.dosage.toLowerCase().includes(query.toLowerCase()))
+        )
+        setSearchResults(
+          meds.map(m => ({
+            label: m.name,
+            sub: m.dosage ? `${m.dosage} ${m.dosage_unit || ''}`.trim() : m.medicine_type || 'Medicine',
+            type: 'Medicine',
+            route: '/add-medicine',
+          }))
+        )
+      } catch {
+        setSearchResults([])
+      }
+    }
+    const timer = setTimeout(fetchSearch, 200)
+    return () => clearTimeout(timer)
+  }, [query])
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -63,12 +119,12 @@ export default function Navbar() {
   const handleSearchKeyDown = (e) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault()
-      setSelectedIndex(prev => Math.min(prev + 1, filtered.length - 1))
+      setSelectedIndex(prev => Math.min(prev + 1, searchResults.length - 1))
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       setSelectedIndex(prev => Math.max(prev - 1, 0))
-    } else if (e.key === 'Enter' && filtered[selectedIndex]) {
-      handleSearchNavigate(filtered[selectedIndex])
+    } else if (e.key === 'Enter' && searchResults[selectedIndex]) {
+      handleSearchNavigate(searchResults[selectedIndex])
     }
   }
 
@@ -78,12 +134,6 @@ export default function Navbar() {
       selected?.scrollIntoView({ block: 'nearest' })
     }
   }, [selectedIndex])
-
-  const notifications = [
-    { text: 'Time to take Aspirin 100mg', time: 'Now', type: 'reminder' },
-    { text: 'Refill due: Lisinopril 10mg', time: '2 days', type: 'refill' },
-    { text: 'Adherence report ready', time: '1 hour ago', type: 'report' },
-  ]
 
   const notifIcons = {
     reminder: 'bg-emerald-500/20 text-emerald-400',
@@ -109,7 +159,7 @@ export default function Navbar() {
           } transition-colors`} />
           <input
             type="text"
-            placeholder="Search medicines, history..."
+            placeholder="Search medicines..."
             value={query}
             onFocus={() => setShowSearch(true)}
             onChange={(e) => {
@@ -147,20 +197,16 @@ export default function Navbar() {
                 }`}
                 ref={searchResultsRef}
               >
-                <div className={`p-2 ${theme === 'light' ? '' : ''}`}>
-                  {filtered.length === 0 ? (
+                <div className="p-2">
+                  {searchResults.length === 0 ? (
                     <div className={`p-4 text-center text-sm ${theme === 'light' ? 'text-navy-400' : 'text-white/40'}`}>
                       No results found for "{query}"
                     </div>
                   ) : (
-                    filtered.map((item, i) => {
+                    searchResults.map((item, i) => {
                       const Icon = item.icon
                       const typeColors = {
                         Medicine: theme === 'light' ? 'bg-emerald-100 text-emerald-600' : 'bg-emerald-500/20 text-emerald-400',
-                        History: theme === 'light' ? 'bg-cyan-100 text-cyan-600' : 'bg-cyan-500/20 text-cyan-400',
-                        Report: theme === 'light' ? 'bg-violet-100 text-violet-600' : 'bg-violet-500/20 text-violet-400',
-                        AI: theme === 'light' ? 'bg-orange-100 text-orange-600' : 'bg-orange-500/20 text-orange-400',
-                        Scanner: theme === 'light' ? 'bg-pink-100 text-pink-600' : 'bg-pink-500/20 text-pink-400',
                       }
                       return (
                         <button
@@ -174,8 +220,8 @@ export default function Navbar() {
                               : 'hover:bg-white/[0.04]'
                           }`}
                         >
-                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${typeColors[item.type]}`}>
-                            <Icon className="w-4 h-4" />
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${typeColors[item.type] || (theme === 'light' ? 'bg-navy-100 text-navy-500' : 'bg-white/[0.06] text-white/50')}`}>
+                            {Icon ? <Icon className="w-4 h-4" /> : <Search className="w-4 h-4" />}
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className={`text-sm font-medium ${theme === 'light' ? 'text-navy-700' : 'text-white/80'}`}>{item.label}</p>
@@ -192,7 +238,7 @@ export default function Navbar() {
                 <div className={`px-3 py-2 border-t flex items-center justify-between text-[10px] ${
                   theme === 'light' ? 'border-navy-100 text-navy-400' : 'border-white/[0.06] text-white/30'
                 }`}>
-                  <span>{filtered.length} results</span>
+                  <span>{searchResults.length} results</span>
                   <span>↑↓ navigate · enter select · esc close</span>
                 </div>
               </motion.div>
@@ -215,15 +261,19 @@ export default function Navbar() {
 
         <div className="relative">
           <button
-            onClick={() => { setShowNotifications(!showNotifications); setShowProfile(false) }}
+            onClick={handleBellClick}
             className={`p-2.5 rounded-2xl transition-all ${
               theme === 'light' ? 'text-navy-400 hover:text-navy-700 hover:bg-navy-100' : 'text-white/40 hover:text-white hover:bg-white/[0.06]'
             } relative`}
           >
             <Bell className="w-5 h-5" />
-            <span className={`absolute top-2 right-2 w-2 h-2 bg-emerald-400 rounded-full ring-2 ${
-              theme === 'light' ? 'ring-white' : 'ring-navy-900'
-            } animate-pulse-soft`} />
+            {notifBadge > 0 && (
+              <span className={`absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center text-[10px] font-bold rounded-full ${
+                theme === 'light' ? 'bg-emerald-500 text-white ring-2 ring-white' : 'bg-emerald-400 text-navy-900 ring-2 ring-navy-900'
+              }`}>
+                {notifBadge > 9 ? '9+' : notifBadge}
+              </span>
+            )}
           </button>
           <AnimatePresence>
             {showNotifications && (
@@ -240,19 +290,25 @@ export default function Navbar() {
                   <p className={`text-sm font-semibold ${theme === 'light' ? 'text-navy-700' : 'text-white/90'}`}>Notifications</p>
                 </div>
                 <div className="p-2">
-                  {notifications.map((n, i) => (
-                    <div key={i} className={`flex items-start gap-3 p-3 rounded-2xl cursor-pointer ${
-                      theme === 'light' ? 'hover:bg-navy-50' : 'hover:bg-white/[0.04]'
-                    } transition-colors`}>
-                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${notifIcons[n.type]}`}>
-                        <Bell className="w-4 h-4" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-sm ${theme === 'light' ? 'text-navy-600' : 'text-white/80'}`}>{n.text}</p>
-                        <p className={`text-xs ${theme === 'light' ? 'text-navy-400' : 'text-white/30'} mt-0.5`}>{n.time}</p>
-                      </div>
+                  {notifications.length === 0 ? (
+                    <div className={`p-4 text-center text-sm ${theme === 'light' ? 'text-navy-400' : 'text-white/40'}`}>
+                      No notifications
                     </div>
-                  ))}
+                  ) : (
+                    notifications.map((n, i) => (
+                      <div key={i} className={`flex items-start gap-3 p-3 rounded-2xl cursor-pointer ${
+                        theme === 'light' ? 'hover:bg-navy-50' : 'hover:bg-white/[0.04]'
+                      } transition-colors`}>
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${notifIcons[n.type]}`}>
+                          <Bell className="w-4 h-4" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm ${theme === 'light' ? 'text-navy-600' : 'text-white/80'}`}>{n.text}</p>
+                          <p className={`text-xs ${theme === 'light' ? 'text-navy-400' : 'text-white/30'} mt-0.5`}>{n.time}</p>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
               </motion.div>
             )}

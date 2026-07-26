@@ -148,16 +148,16 @@ export default function Landing() {
                       </div>
                       <div>
                         <p className={`text-sm font-semibold ${theme === 'light' ? 'text-navy-700' : 'text-white'}`}>Today's Medicines</p>
-                        <p className={`text-xs ${theme === 'light' ? 'text-navy-400' : 'text-white/40'}`}>4 doses remaining</p>
+                        <p className={`text-xs ${theme === 'light' ? 'text-navy-400' : 'text-white/40'}`}>Smart medication tracking</p>
                       </div>
                     </div>
                     <span className={`badge-emerald ${theme === 'light' ? '!bg-emerald-100 !text-emerald-700 !border-emerald-200' : ''} text-xs`}>Active</span>
                   </div>
                   <div className="space-y-3">
                     {[
-                      { name: 'Aspirin', dose: '100mg', time: '08:00 PM', color: 'emerald' },
-                      { name: 'Metformin', dose: '500mg', time: '01:00 PM', color: 'cyan' },
-                      { name: 'Vitamin D', dose: '2000 IU', time: '08:00 AM', color: 'violet' },
+                      { name: 'Medication', dose: 'Schedule', time: '08:00 AM', color: 'emerald' },
+                      { name: 'Reminders', dose: 'Set times', time: 'Multiple', color: 'cyan' },
+                      { name: 'Track', dose: 'Adherence', time: 'Daily', color: 'violet' },
                     ].map((med, i) => (
                       <motion.div
                         key={med.name}
@@ -166,8 +166,8 @@ export default function Landing() {
                         transition={{ delay: 0.6 + i * 0.15 }}
                         className={`flex items-center gap-3 p-3 rounded-2xl border ${theme === 'light' ? 'bg-navy-50 border-navy-100' : 'bg-white/[0.04] border-white/[0.06]'}`}
                       >
-                        <div className={`w-8 h-8 rounded-xl ${theme === 'light' ? `bg-${med.color}-100` : `bg-${med.color}-500/20`} flex items-center justify-center`}>
-                          <Pill className={`w-4 h-4 ${theme === 'light' ? `text-${med.color}-600` : `text-${med.color}-400`}`} />
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center`}>
+                          <Pill className={`w-4 h-4 text-emerald-400`} />
                         </div>
                         <div className="flex-1">
                           <p className={`text-sm font-medium ${theme === 'light' ? 'text-navy-700' : 'text-white/90'}`}>{med.name} <span className={theme === 'light' ? 'text-navy-400' : 'text-white/40'}>{med.dose}</span></p>

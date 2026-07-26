@@ -1,21 +1,34 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Clock, Search, CalendarDays, Pill, CheckCircle, XCircle, AlertCircle, ListFilter } from 'lucide-react'
-import { dummyLogs } from '../data'
 import { useTheme } from '../components/ThemeContext'
 import { HealthIllustration } from '../components/illustrations'
+import API from '../api'
 
 const statusConfig = {
-  Taken: { icon: CheckCircle, color: 'badge-emerald', dot: 'bg-emerald-500' },
-  Missed: { icon: XCircle, color: 'badge-orange', dot: 'bg-red-500' },
-  Upcoming: { icon: AlertCircle, color: 'badge-cyan', dot: 'bg-cyan-500' },
+  taken: { icon: CheckCircle, color: 'badge-emerald', dot: 'bg-emerald-500' },
+  missed: { icon: XCircle, color: 'badge-orange', dot: 'bg-red-500' },
+  pending: { icon: AlertCircle, color: 'badge-cyan', dot: 'bg-cyan-500' },
+  skipped: { icon: XCircle, color: 'badge-neutral', dot: 'bg-white/40' },
+  late: { icon: Clock, color: 'badge-orange', dot: 'bg-orange-500' },
 }
 
-function HistoryCard({ date, name, dose, time, status }) {
+function HistoryCard({ item }) {
   const { theme } = useTheme()
   const isLight = theme === 'light'
-  const config = statusConfig[status]
+  const config = statusConfig[item.status] || statusConfig.pending
   const StatusIcon = config.icon
+
+  const dateStr = item.scheduled_datetime
+    ? new Date(item.scheduled_datetime).toLocaleDateString()
+    : ''
+  const timeStr = item.scheduled_datetime
+    ? new Date(item.scheduled_datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : ''
+  const takenTimeStr = item.taken_datetime
+    ? new Date(item.taken_datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : null
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -32,18 +45,21 @@ function HistoryCard({ date, name, dose, time, status }) {
             <Pill className="w-4 h-4" />
           </div>
           <div>
-            <p className={`text-sm font-semibold ${isLight ? 'text-navy-700' : 'text-white/90'}`}>{name}</p>
-            <p className={`text-xs ${isLight ? 'text-navy-400' : 'text-white/40'}`}>{dose}</p>
+            <p className={`text-sm font-semibold ${isLight ? 'text-navy-700' : 'text-white/90'}`}>{item.medicine_name}</p>
+            <p className={`text-xs ${isLight ? 'text-navy-400' : 'text-white/40'}`}>{item.dosage}</p>
           </div>
         </div>
         <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${config.color} ${isLight ? '!bg-navy-50 !border-navy-200' : ''}`}>
           <StatusIcon className="w-3.5 h-3.5" />
-          {status}
+          {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
         </span>
       </div>
       <div className={`flex items-center gap-4 text-xs mt-3 pt-3 border-t ${isLight ? 'text-navy-400 border-navy-100' : 'text-white/30 border-white/[0.06]'}`}>
-        <span className="flex items-center gap-1"><CalendarDays className="w-3 h-3" /> {date}</span>
-        <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {time}</span>
+        <span className="flex items-center gap-1"><CalendarDays className="w-3 h-3" /> {dateStr}</span>
+        <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {timeStr}</span>
+        {takenTimeStr && (
+          <span className="flex items-center gap-1"><CheckCircle className="w-3 h-3" /> Taken: {takenTimeStr}</span>
+        )}
       </div>
     </motion.div>
   )
@@ -64,17 +80,47 @@ function EmptyState() {
 export default function History() {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
+  const [records, setRecords] = useState([])
+  const [loading, setLoading] = useState(true)
   const { theme } = useTheme()
   const isLight = theme === 'light'
 
-  const filtered = dummyLogs.filter((log) => {
-    const matchesSearch = log.name.toLowerCase().includes(search.toLowerCase())
-    const matchesFilter = filter === 'all' || log.status.toLowerCase() === filter
-    return matchesSearch && matchesFilter
+  const timeFilterLabels = [
+    { value: 'all', label: 'All History' },
+    { value: 'today', label: 'Today' },
+    { value: 'week', label: 'Last 7 Days' },
+  ]
+
+  const fetchHistory = async () => {
+    try {
+      setLoading(true)
+      const res = await API.get(`/reminders/history?filter=${filter}`)
+      setRecords(res.data || [])
+    } catch {
+      setRecords([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchHistory()
+  }, [filter])
+
+  const filtered = records.filter((log) => {
+    if (!search.trim()) return true
+    return (log.medicine_name || '').toLowerCase().includes(search.toLowerCase())
   })
 
-  const today = filtered.filter(l => l.date === '2026-07-08')
-  const earlier = filtered.filter(l => l.date !== '2026-07-08')
+  const todayRecords = filtered.filter(r => {
+    if (!r.scheduled_datetime) return false
+    const today = new Date().toDateString()
+    return new Date(r.scheduled_datetime).toDateString() === today
+  })
+  const earlierRecords = filtered.filter(r => {
+    if (!r.scheduled_datetime) return false
+    return new Date(r.scheduled_datetime).toDateString() !== new Date().toDateString()
+  })
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -110,45 +156,48 @@ export default function History() {
                     : 'bg-white/[0.04] border border-white/[0.08] text-white/70 focus:outline-none focus:ring-2 focus:ring-emerald-500/30'
                 }`}
               >
-                <option value="all" className={isLight ? 'bg-white' : 'bg-navy-800'}>All Status</option>
-                <option value="taken" className={isLight ? 'bg-white' : 'bg-navy-800'}>Taken</option>
-                <option value="missed" className={isLight ? 'bg-white' : 'bg-navy-800'}>Missed</option>
-                <option value="upcoming" className={isLight ? 'bg-white' : 'bg-navy-800'}>Upcoming</option>
+                {timeFilterLabels.map(tf => (
+                  <option key={tf.value} value={tf.value} className={isLight ? 'bg-white' : 'bg-navy-800'}>{tf.label}</option>
+                ))}
               </select>
             </div>
           </div>
         </div>
       </motion.div>
 
-      {filtered.length === 0 ? (
+      {loading ? (
+        <div className="grid sm:grid-cols-2 gap-3">
+          {[1, 2, 3, 4].map(i => <div key={i} className={`skeleton h-28 ${isLight ? '!bg-navy-100' : ''}`} />)}
+        </div>
+      ) : filtered.length === 0 ? (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={`rounded-3xl border ${isLight ? 'bg-white border-navy-100 shadow-sm' : 'glass-card'}`}>
           <EmptyState />
         </motion.div>
       ) : (
         <div className="space-y-6">
-          {today.length > 0 && (
+          {todayRecords.length > 0 && (
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
               <h2 className={`text-sm font-semibold uppercase tracking-wider mb-3 flex items-center gap-2 ${isLight ? 'text-navy-400' : 'text-white/30'}`}>
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                 Today
               </h2>
               <div className="grid sm:grid-cols-2 gap-3">
-                {today.map((log, i) => (
-                  <HistoryCard key={i} {...log} />
+                {todayRecords.map(r => (
+                  <HistoryCard key={r.id} item={r} />
                 ))}
               </div>
             </motion.div>
           )}
 
-          {earlier.length > 0 && (
+          {earlierRecords.length > 0 && (
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
               <h2 className={`text-sm font-semibold uppercase tracking-wider mb-3 flex items-center gap-2 ${isLight ? 'text-navy-400' : 'text-white/30'}`}>
                 <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
                 Earlier
               </h2>
               <div className="grid sm:grid-cols-2 gap-3">
-                {earlier.map((log, i) => (
-                  <HistoryCard key={i} {...log} />
+                {earlierRecords.map(r => (
+                  <HistoryCard key={r.id} item={r} />
                 ))}
               </div>
             </motion.div>
@@ -156,17 +205,19 @@ export default function History() {
         </div>
       )}
 
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.3 }}
-        className={`mt-6 flex items-center justify-center gap-2 text-xs px-4 py-3 rounded-2xl border ${
-          isLight ? 'bg-white border-navy-100 text-navy-400 shadow-sm' : 'glass-card text-white/30'
-        }`}
-      >
-        <Clock className="w-3 h-3" />
-        Showing logs from the last 7 days
-      </motion.div>
+      {filtered.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.3 }}
+          className={`mt-6 flex items-center justify-center gap-2 text-xs px-4 py-3 rounded-2xl border ${
+            isLight ? 'bg-white border-navy-100 text-navy-400 shadow-sm' : 'glass-card text-white/30'
+          }`}
+        >
+          <Clock className="w-3 h-3" />
+          {filter === 'today' ? 'Showing today\'s history' : filter === 'week' ? 'Showing last 7 days' : 'Showing all history'}
+        </motion.div>
+      )}
     </div>
   )
 }

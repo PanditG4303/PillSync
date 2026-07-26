@@ -17,8 +17,12 @@ export function getErrorMessage(err) {
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
-    const stored = localStorage.getItem('pillsync_user')
-    return stored ? JSON.parse(stored) : null
+    try {
+      const stored = localStorage.getItem('pillsync_user')
+      return stored ? JSON.parse(stored) : null
+    } catch {
+      return null
+    }
   })
 
   const login = useCallback(async (email, password) => {
@@ -36,17 +40,10 @@ export function AuthProvider({ children }) {
     return res.data
   }, [])
 
-  const guestLogin = useCallback(() => {
-    const guest = { name: 'Guest User', email: 'guest@pillsync.ai', role: 'Patient', isGuest: true }
-    setUser(guest)
-    localStorage.setItem('pillsync_user', JSON.stringify(guest))
-  }, [])
-
   const logout = useCallback(async () => {
     try {
       await axios.post(`${API}/auth/logout`)
     } catch {
-      // Logout even if API fails
     }
     setUser(null)
     localStorage.removeItem('pillsync_user')
@@ -64,7 +61,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={{
-      user, isAuthenticated: !!user, login, register, guestLogin, logout, forgotPassword, resetPassword,
+      user, isAuthenticated: !!user, login, register, logout, forgotPassword, resetPassword,
     }}>
       {children}
     </AuthContext.Provider>
