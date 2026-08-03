@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
-import { Bell, Search, User, ChevronDown, LogOut, Settings as SettingsIcon, HelpCircle, Sparkles, Sun, Moon } from 'lucide-react'
+import { Bell, Search, User, ChevronDown, LogOut, Settings as SettingsIcon, Sun, Moon, Menu, Users } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from './AuthContext'
 import { useTheme } from './ThemeContext'
 import { useNavigate } from 'react-router-dom'
-import API from '../api'
+import API, { getStoredPatientId, setStoredPatientId } from '../api'
+import { formatTime } from '../utils/datetime'
 
-export default function Navbar() {
+export default function Navbar({ onMenuClick }) {
   const [query, setQuery] = useState('')
   const [showNotifications, setShowNotifications] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
@@ -19,8 +20,47 @@ export default function Navbar() {
   const navigate = useNavigate()
   const searchInputRef = useRef(null)
   const searchResultsRef = useRef(null)
+  const medicinesCacheRef = useRef(null)
 
   const [notifBadge, setNotifBadge] = useState(0)
+  const [patients, setPatients] = useState([])
+  const [showPatientSwitcher, setShowPatientSwitcher] = useState(false)
+  const [selectedPatientId, setSelectedPatientId] = useState(null)
+
+  const isCaregiver = user?.role === 'Caregiver'
+  const selectedPatient = patients.find(p => p.id === selectedPatientId) || null
+
+  useEffect(() => {
+    if (!isCaregiver) return
+    const load = async () => {
+      try {
+        const res = await API.get('/auth/caregiver/patients')
+        const list = res.data.patients || []
+        setPatients(list)
+        const stored = getStoredPatientId()
+        if (stored && list.some(p => p.id === stored)) {
+          setSelectedPatientId(stored)
+        } else if (list.length > 0) {
+          setSelectedPatientId(list[0].id)
+          setStoredPatientId(list[0].id)
+        }
+      } catch {
+        setPatients([])
+      }
+    }
+    load()
+  }, [isCaregiver])
+
+  const handlePatientSelect = (id) => {
+    if (id === selectedPatientId) {
+      setShowPatientSwitcher(false)
+      return
+    }
+    setStoredPatientId(id)
+    setSelectedPatientId(id)
+    setShowPatientSwitcher(false)
+    window.location.reload()
+  }
 
   const fetchNotifications = async () => {
     try {
@@ -30,9 +70,7 @@ export default function Navbar() {
       setNotifications(
         pending.slice(0, 5).map(r => ({
           text: `Time to take ${r.medicine_name}`,
-          time: r.scheduled_datetime
-            ? new Date(r.scheduled_datetime + '+05:30').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            : '',
+          time: formatTime(r.scheduled_datetime),
           type: 'reminder',
         }))
       )
@@ -68,8 +106,11 @@ export default function Navbar() {
         return
       }
       try {
-        const res = await API.get('/medicines')
-        const meds = (res.data || []).filter(m =>
+        if (!medicinesCacheRef.current) {
+          const res = await API.get('/medicines')
+          medicinesCacheRef.current = res.data || []
+        }
+        const meds = medicinesCacheRef.current.filter(m =>
           m.name.toLowerCase().includes(query.toLowerCase()) ||
           (m.dosage && m.dosage.toLowerCase().includes(query.toLowerCase()))
         )
@@ -88,6 +129,12 @@ export default function Navbar() {
     const timer = setTimeout(fetchSearch, 200)
     return () => clearTimeout(timer)
   }, [query])
+
+  useEffect(() => {
+    const invalidate = () => { medicinesCacheRef.current = null }
+    window.addEventListener('pillsync:reminders-updated', invalidate)
+    return () => window.removeEventListener('pillsync:reminders-updated', invalidate)
+  }, [])
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -152,7 +199,19 @@ export default function Navbar() {
         ? 'bg-white/80 backdrop-blur-2xl border-b border-navy-100'
         : 'bg-navy-900/60 backdrop-blur-2xl border-b border-white/[0.06]'
     } flex items-center justify-between px-4 md:px-6 sticky top-0 z-30`}>
-      <div className="flex items-center gap-4 w-full max-w-md">
+      <div className="flex items-center gap-3 w-full max-w-md">
+        {onMenuClick && (
+          <button
+            type="button"
+            aria-label="Open menu"
+            onClick={onMenuClick}
+            className={`md:hidden p-2 rounded-xl shrink-0 ${
+              theme === 'light' ? 'text-navy-600 hover:bg-navy-50' : 'text-white/70 hover:bg-white/[0.06]'
+            }`}
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        )}
         <div className="relative w-full group">
           <Search className={`absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 ${
             theme === 'light' ? 'text-navy-300 group-focus-within:text-emerald-500' : 'text-white/30 group-focus-within:text-emerald-400'
@@ -248,6 +307,75 @@ export default function Navbar() {
       </div>
 
       <div className="flex items-center gap-2">
+        {isCaregiver && patients.length > 0 && (
+          <div className="relative">
+            <button
+              onClick={() => { setShowPatientSwitcher(!showPatientSwitcher); setShowNotifications(false); setShowProfile(false) }}
+              className={`flex items-center gap-2 px-3 py-2 rounded-2xl text-sm transition-all ${
+                theme === 'light'
+                  ? 'bg-violet-50 border border-violet-200 text-violet-700 hover:bg-violet-100'
+                  : 'bg-violet-500/15 border border-violet-500/25 text-violet-300 hover:bg-violet-500/25'
+              }`}
+            >
+              <Users className="w-4 h-4 shrink-0" />
+              <span className="hidden lg:block font-medium max-w-[140px] truncate">
+                {selectedPatient ? selectedPatient.name : 'Select patient'}
+              </span>
+              <ChevronDown className="w-3.5 h-3.5 hidden lg:block" />
+            </button>
+            <AnimatePresence>
+              {showPatientSwitcher && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                  transition={{ duration: 0.15 }}
+                  className={`absolute right-0 mt-2 w-64 rounded-3xl overflow-hidden ${
+                    theme === 'light' ? 'bg-white border border-navy-100 shadow-lg' : 'glass-card'
+                  }`}
+                >
+                  <div className={`p-4 border-b ${theme === 'light' ? 'border-navy-100' : 'border-white/[0.06]'}`}>
+                    <p className={`text-sm font-semibold ${theme === 'light' ? 'text-navy-700' : 'text-white/90'}`}>
+                      Viewing patient
+                    </p>
+                    <p className={`text-xs mt-0.5 ${theme === 'light' ? 'text-navy-400' : 'text-white/40'}`}>
+                      Switch between your assigned patients
+                    </p>
+                  </div>
+                  <div className="p-2 max-h-72 overflow-y-auto">
+                    {patients.map(p => (
+                      <button
+                        key={p.id}
+                        onClick={() => handlePatientSelect(p.id)}
+                        className={`flex items-center gap-3 w-full p-3 rounded-2xl text-left transition-colors ${
+                          p.id === selectedPatientId
+                            ? theme === 'light' ? 'bg-violet-50' : 'bg-violet-500/15'
+                            : theme === 'light' ? 'hover:bg-navy-50' : 'hover:bg-white/[0.04]'
+                        }`}
+                      >
+                        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-400 to-cyan-400 flex items-center justify-center shrink-0">
+                          <User className="w-4 h-4 text-navy-900" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-medium truncate ${theme === 'light' ? 'text-navy-700' : 'text-white/80'}`}>
+                            {p.name}
+                          </p>
+                          <p className={`text-xs truncate ${theme === 'light' ? 'text-navy-400' : 'text-white/30'}`}>
+                            {p.email}
+                          </p>
+                        </div>
+                        {p.id === selectedPatientId && (
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${theme === 'light' ? 'bg-violet-500' : 'bg-violet-400'}`} />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
+
         <motion.button
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
@@ -351,11 +479,6 @@ export default function Navbar() {
                     theme === 'light' ? 'text-navy-400 hover:text-navy-700 hover:bg-navy-50' : 'text-white/60 hover:text-white/90 hover:bg-white/[0.04]'
                   }`}>
                     <SettingsIcon className="w-4 h-4" /> Settings
-                  </button>
-                  <button className={`flex items-center gap-3 w-full p-3 rounded-2xl text-sm transition-colors ${
-                    theme === 'light' ? 'text-navy-400 hover:text-navy-700 hover:bg-navy-50' : 'text-white/60 hover:text-white/90 hover:bg-white/[0.04]'
-                  }`}>
-                    <HelpCircle className="w-4 h-4" /> Help & Support
                   </button>
                   <div className={`border-t ${theme === 'light' ? 'border-navy-100' : 'border-white/[0.06]'} mt-1 pt-1`}>
                     <button onClick={() => { handleLogout() }} className="flex items-center gap-3 w-full p-3 rounded-2xl hover:bg-red-500/10 transition-colors text-sm text-red-400">

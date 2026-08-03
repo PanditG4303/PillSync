@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { Bell, Shield, Palette, Volume2, Clock, Send, CheckCircle, XCircle, AlertCircle, Sun, Moon } from 'lucide-react'
+import { Bell, Shield, Palette, Clock, Send, CheckCircle, XCircle, AlertCircle, Sun, Moon } from 'lucide-react'
 import { useAuth } from '../components/AuthContext'
 import { useTheme } from '../components/ThemeContext'
 import API from '../api'
@@ -94,11 +94,12 @@ function SettingSection({ icon: Icon, title, children }) {
 export default function Settings() {
   const { user } = useAuth()
   const { theme, toggleTheme } = useTheme()
-  const isLight = theme === 'dark'
+  const isLight = theme === 'light'
 
   const [prefs, setPrefs] = useState({
     push_notifications_enabled: true,
     reminder_notifications_enabled: true,
+    refill_notifications_enabled: true,
     advance_notice_minutes: 0,
   })
   const [loadingPrefs, setLoadingPrefs] = useState(true)
@@ -111,7 +112,12 @@ export default function Settings() {
       const res = await API.get('/settings/preferences')
       setPrefs(res.data)
     } catch {
-      setPrefs({ push_notifications_enabled: true, reminder_notifications_enabled: true, advance_notice_minutes: 0 })
+      setPrefs({
+        push_notifications_enabled: true,
+        reminder_notifications_enabled: true,
+        refill_notifications_enabled: true,
+        advance_notice_minutes: 0,
+      })
     } finally {
       setLoadingPrefs(false)
     }
@@ -130,6 +136,7 @@ export default function Settings() {
   }, [])
 
   const updatePref = async (key, value) => {
+    setPrefs((prev) => ({ ...prev, [key]: value }))
     setSaving(true)
     try {
       await API.put('/settings/preferences', { [key]: value })
@@ -259,14 +266,12 @@ export default function Settings() {
                 label="Reminder Notifications"
                 description="Get notified at scheduled medicine times"
               />
-              <div className={`pt-3 border-t ${isLight ? 'border-navy-100' : 'border-white/[0.06]'}`}>
-                <Toggle
-                  enabled={true}
-                  onChange={() => {}}
-                  label="Reminder Sound"
-                  description="Browser/system controlled — notifications include sound by default"
-                />
-              </div>
+              <Toggle
+                enabled={prefs.refill_notifications_enabled !== false}
+                onChange={(val) => updatePref('refill_notifications_enabled', val)}
+                label="Refill Alerts"
+                description="Get notified when medicine stock is running low"
+              />
             </SettingSection>
 
             <SettingSection icon={Clock} title="Timing">

@@ -1,16 +1,15 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { User, Mail, Lock, Eye, EyeOff, Pill, ArrowRight, Github, ChromeIcon as Google, Sparkles, HeartPulse, Shield } from 'lucide-react'
+import { User, Mail, Lock, Eye, EyeOff, Pill, ArrowRight, Sparkles, HeartPulse, Shield } from 'lucide-react'
 import { useAuth, getErrorMessage } from '../components/AuthContext'
 import { useTheme } from '../components/ThemeContext'
 
 export default function Register() {
   const [show, setShow] = useState(false)
-  const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '' })
+  const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '', role: 'Patient' })
   const [focused, setFocused] = useState(null)
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState(false)
   const [loading, setLoading] = useState(false)
   const { register } = useAuth()
   const { theme } = useTheme()
@@ -19,15 +18,22 @@ export default function Register() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
+    if (form.password.length < 8) {
+      setError('Password must be at least 8 characters')
+      return
+    }
+    if (!/[A-Za-z]/.test(form.password) || !/\d/.test(form.password)) {
+      setError('Password must include letters and numbers')
+      return
+    }
     if (form.password !== form.confirm) {
       setError('Passwords do not match')
       return
     }
     setLoading(true)
     try {
-      await register(form.name, form.email, form.password, form.confirm)
-      setSuccess(true)
-      setTimeout(() => navigate('/login'), 1500)
+      await register(form.name, form.email, form.password, form.confirm, form.role)
+      navigate('/dashboard')
     } catch (err) {
       setError(getErrorMessage(err))
     } finally {
@@ -69,15 +75,15 @@ export default function Register() {
                 <Shield className="w-5 h-5 text-white" />
               </motion.div>
             </div>
-            <h2 className={`text-2xl font-bold text-center mb-3 ${theme === 'light' ? 'text-navy-800' : 'text-white'}`}>Secure & Private</h2>
+            <h2 className={`text-2xl font-bold text-center mb-3 ${theme === 'light' ? 'text-navy-800' : 'text-white'}`}>Built for adherence</h2>
             <p className={`text-center text-sm leading-relaxed ${theme === 'light' ? 'text-navy-400' : 'text-white/50'}`}>
-              Your medical data is encrypted and private. Start your journey to better medication management.
+              Track doses, scan prescriptions, and stay ahead of refills — all in one place.
             </p>
             <div className="mt-8 space-y-3">
               {[
-                { icon: Sparkles, text: 'AI-Powered Insights', color: 'emerald' },
-                { icon: Shield, text: 'End-to-End Encryption', color: 'violet' },
-                { icon: User, text: 'Personalized Dashboard', color: 'cyan' },
+                { icon: Sparkles, text: 'Smart adherence tracking', color: 'emerald' },
+                { icon: Shield, text: 'Private account access', color: 'violet' },
+                { icon: User, text: 'Personalized dashboard', color: 'cyan' },
               ].map(({ icon: Icon, text }) => (
                 <div key={text} className={`flex items-center gap-3 p-3 rounded-2xl border ${theme === 'light' ? 'bg-navy-50 border-navy-100' : 'bg-white/[0.04] border-white/[0.06]'}`}>
                   <div className={`w-8 h-8 rounded-xl ${theme === 'light' ? 'bg-navy-100 text-navy-500' : 'bg-white/[0.06] text-white/50'} flex items-center justify-center`}>
@@ -112,15 +118,6 @@ export default function Register() {
           </div>
 
           <div className={`p-8 rounded-3xl border ${theme === 'light' ? 'bg-white border-navy-100 shadow-lg' : 'glass-card'}`}>
-            {success ? (
-              <div className="py-8 text-center">
-                <div className="w-16 h-16 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-4">
-                  <Pill className="w-8 h-8 text-emerald-400" />
-                </div>
-                <h3 className={`text-xl font-bold mb-2 ${theme === 'light' ? 'text-navy-800' : 'text-white'}`}>Account Created!</h3>
-                <p className={`text-sm ${theme === 'light' ? 'text-navy-400' : 'text-white/50'}`}>Redirecting to login...</p>
-              </div>
-            ) : (
               <form onSubmit={handleSubmit} className="space-y-5">
                 {error && (
                   <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm text-center">
@@ -162,19 +159,31 @@ export default function Register() {
                 </div>
 
                 <div>
+                  <label className={`block text-sm font-medium mb-1.5 ${theme === 'light' ? 'text-navy-600' : 'text-white/70'}`}>I am a</label>
+                  <select
+                    value={form.role}
+                    onChange={(e) => setForm({ ...form, role: e.target.value })}
+                    className={`${theme === 'light' ? 'bg-navy-50 border-navy-200 text-navy-700' : ''} glass-input`}
+                  >
+                    <option value="Patient">Patient</option>
+                    <option value="Caregiver">Caregiver</option>
+                  </select>
+                </div>
+
+                <div>
                   <label className={`block text-sm font-medium mb-1.5 ${theme === 'light' ? 'text-navy-600' : 'text-white/70'}`}>Password</label>
                   <div className="relative">
                     <Lock className={`absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 transition-colors ${focused === 'password' ? (theme === 'light' ? 'text-violet-500' : 'text-violet-400') : (theme === 'light' ? 'text-navy-300' : 'text-white/30')}`} />
                     <input
                       type={show ? 'text' : 'password'}
-                      placeholder="Min. 6 characters"
+                      placeholder="Min. 8 chars, letters + numbers"
                       value={form.password}
                       onChange={(e) => setForm({ ...form, password: e.target.value })}
                       onFocus={() => setFocused('password')}
                       onBlur={() => setFocused(null)}
                       className={`${theme === 'light' ? 'bg-navy-50 border-navy-200 text-navy-700 placeholder:text-navy-300' : ''} glass-input pl-11 pr-11`}
                       required
-                      minLength={6}
+                      minLength={8}
                     />
                     <button
                       type="button"
@@ -211,29 +220,6 @@ export default function Register() {
                   {loading ? 'Creating Account...' : 'Create Account'} <ArrowRight className="w-4 h-4" />
                 </motion.button>
               </form>
-            )}
-
-            <div className="relative my-6">
-              <div className="absolute inset-0 flex items-center"><div className={`w-full border-t ${theme === 'light' ? 'border-navy-100' : 'border-white/[0.08]'}`} /></div>
-              <div className="relative flex justify-center"><span className={`px-3 text-xs ${theme === 'light' ? 'bg-white text-navy-400' : 'bg-navy-900 text-white/30'}`}>Or continue with</span></div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <motion.button
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.99 }}
-                className={`btn-secondary py-2.5 text-xs ${theme === 'light' ? '!bg-white !border-navy-200 !text-navy-600 hover:!bg-navy-50' : ''}`}
-              >
-                <Google className="w-4 h-4" /> Google
-              </motion.button>
-              <motion.button
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.99 }}
-                className={`btn-secondary py-2.5 text-xs ${theme === 'light' ? '!bg-white !border-navy-200 !text-navy-600 hover:!bg-navy-50' : ''}`}
-              >
-                <Github className="w-4 h-4" /> GitHub
-              </motion.button>
-            </div>
 
             <p className={`text-center text-sm mt-6 ${theme === 'light' ? 'text-navy-400' : 'text-white/40'}`}>
               Already have an account?{' '}

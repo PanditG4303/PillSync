@@ -73,12 +73,36 @@ def send_fcm_notification(token: str, title: str, body: str, data: dict = None):
         from firebase_admin import messaging
 
         message = messaging.Message(
-            data={"title": title, "body": body, **(data or {})},
+            notification=messaging.Notification(title=title, body=body),
+            data={"title": title, "body": body, **{k: str(v) for k, v in (data or {}).items()}},
             token=token,
         )
-        response = messaging.send(message)
+        messaging.send(message)
         logger.info("[FCM] Notification sent successfully")
         return True
     except Exception as e:
         logger.error(f"[FCM] Notification failed: {e}")
+        unregistered_cls = getattr(messaging, "UnregisteredError", None) or getattr(
+            messaging, "NotFoundError", None
+        )
+        if unregistered_cls and isinstance(e, unregistered_cls):
+            _remove_unregistered_token(token)
         return False
+
+
+def _remove_unregistered_token(token: str):
+    """Drop stale/revoked FCM tokens so they stop failing and can re-register."""
+    try:
+        from database import SessionLocal
+        from models import DeviceToken
+
+        db = SessionLocal()
+        try:
+            deleted = db.query(DeviceToken).filter(DeviceToken.fcm_token == token).delete()
+            db.commit()
+            if deleted:
+                logger.info("[FCM] Removed unregistered device token from database")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error("[FCM] Failed to remove unregistered token: %s", e)

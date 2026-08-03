@@ -3,12 +3,13 @@ import { Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
   ChevronRight, Pill, HeartPulse, CheckCircle, Sparkles, Brain, TrendingUp,
-  Clock, XCircle, Bell, AlertTriangle,
+  Clock, XCircle, AlertTriangle, Package,
 } from 'lucide-react'
 import { useAuth } from '../components/AuthContext'
 import { useTheme } from '../components/ThemeContext'
 import { quickActions } from '../data'
 import API from '../api'
+import { formatTime, parseScheduleDatetime } from '../utils/datetime'
 
 const container = {
   hidden: { opacity: 0 },
@@ -20,7 +21,7 @@ const itemAnim = {
   show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.16, 1, 0.3, 1] } },
 }
 
-function StatCard({ label, value, sub, icon: Icon, index, color }) {
+function StatCard({ label, value, sub, icon: Icon, index }) {
   const { theme } = useTheme()
   const isLight = theme === 'light'
   const iconColor = isLight
@@ -50,21 +51,24 @@ function StatCard({ label, value, sub, icon: Icon, index, color }) {
 function ReminderItem({ reminder, onTaken, onSkipped }) {
   const { theme } = useTheme()
   const isLight = theme === 'light'
-  const isNow = reminder.status === 'pending'
-  const isPast = reminder.status === 'taken' || reminder.status === 'late' || reminder.status === 'skipped'
-
-  const timeStr = reminder.scheduled_datetime
-    ? new Date(reminder.scheduled_datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    : ''
+  const scheduled = parseScheduleDatetime(reminder.scheduled_datetime)
+  const isPending = reminder.status === 'pending'
+  const isDue = isPending && scheduled && scheduled.getTime() <= Date.now()
+  const isUpcoming = isPending && scheduled && scheduled.getTime() > Date.now()
+  const isPast = ['taken', 'late', 'skipped', 'missed'].includes(reminder.status)
+  const timeStr = formatTime(reminder.scheduled_datetime)
 
   return (
     <div className={`flex items-center gap-3 p-3 rounded-2xl transition-all ${
-      isNow ? (isLight ? 'bg-emerald-50 border border-emerald-200' : 'bg-emerald-500/10 border border-emerald-500/20') :
+      isDue ? (isLight ? 'bg-emerald-50 border border-emerald-200' : 'bg-emerald-500/10 border border-emerald-500/20') :
       isPast ? (isLight ? 'bg-navy-50 opacity-60' : 'bg-white/[0.03] opacity-60') :
-      (isLight ? 'bg-white' : 'bg-white/[0.04]')
+      (isLight ? 'bg-white border border-navy-100' : 'bg-white/[0.04]')
     }`}>
       <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-        isNow ? 'bg-emerald-500 text-white' : isPast ? (isLight ? 'bg-navy-100 text-navy-400' : 'bg-white/[0.06] text-white/30') : (isLight ? 'bg-cyan-100 text-cyan-600' : 'bg-cyan-500/20 text-cyan-400')
+        isDue ? 'bg-emerald-500 text-white' :
+        isUpcoming ? (isLight ? 'bg-cyan-100 text-cyan-600' : 'bg-cyan-500/20 text-cyan-400') :
+        isPast ? (isLight ? 'bg-navy-100 text-navy-400' : 'bg-white/[0.06] text-white/30') :
+        (isLight ? 'bg-cyan-100 text-cyan-600' : 'bg-cyan-500/20 text-cyan-400')
       }`}>
         <Pill className="w-5 h-5" />
       </div>
@@ -75,9 +79,11 @@ function ReminderItem({ reminder, onTaken, onSkipped }) {
         </p>
         <p className={`text-xs ${isLight ? 'text-navy-400' : 'text-white/40'}`}>{timeStr}</p>
       </div>
-      {isNow && (
+      {isPending && (
         <div className="flex items-center gap-1">
           <button
+            type="button"
+            aria-label={`Mark ${reminder.medicine_name} as taken`}
             onClick={() => onTaken(reminder.id)}
             className={`p-1.5 rounded-xl text-xs font-medium transition-all ${
               isLight ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
@@ -86,6 +92,8 @@ function ReminderItem({ reminder, onTaken, onSkipped }) {
             <CheckCircle className="w-4 h-4" />
           </button>
           <button
+            type="button"
+            aria-label={`Skip ${reminder.medicine_name}`}
             onClick={() => onSkipped(reminder.id)}
             className={`p-1.5 rounded-xl text-xs font-medium transition-all ${
               isLight ? 'bg-navy-100 text-navy-400 hover:bg-navy-200' : 'bg-white/[0.06] text-white/40 hover:bg-white/[0.10]'
@@ -94,12 +102,14 @@ function ReminderItem({ reminder, onTaken, onSkipped }) {
             <XCircle className="w-4 h-4" />
           </button>
           <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
-            isLight ? 'bg-emerald-100 text-emerald-700' : 'bg-emerald-500/20 text-emerald-400'
-          }`}>Now</span>
+            isDue
+              ? (isLight ? 'bg-emerald-100 text-emerald-700' : 'bg-emerald-500/20 text-emerald-400')
+              : (isLight ? 'bg-cyan-100 text-cyan-700' : 'bg-cyan-500/20 text-cyan-400')
+          }`}>{isDue ? 'Due' : 'Upcoming'}</span>
         </div>
       )}
-      {isPast && reminder.status === 'taken' && <CheckCircle className={`w-4 h-4 ${isLight ? 'text-emerald-500' : 'text-emerald-400'}`} />}
-      {isPast && reminder.status === 'skipped' && <XCircle className={`w-4 h-4 ${isLight ? 'text-orange-500' : 'text-orange-400'}`} />}
+      {reminder.status === 'taken' && <CheckCircle className={`w-4 h-4 ${isLight ? 'text-emerald-500' : 'text-emerald-400'}`} />}
+      {reminder.status === 'skipped' && <XCircle className={`w-4 h-4 ${isLight ? 'text-orange-500' : 'text-orange-400'}`} />}
       {reminder.status === 'late' && <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${isLight ? 'bg-orange-100 text-orange-700' : 'bg-orange-500/20 text-orange-400'}`}>Late</span>}
       {reminder.status === 'missed' && <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${isLight ? 'bg-red-100 text-red-700' : 'bg-red-500/20 text-red-400'}`}>Missed</span>}
     </div>
@@ -173,11 +183,10 @@ function CountdownTimer({ scheduledDatetime }) {
 
   useEffect(() => {
     if (!scheduledDatetime) return
-    const scheduled = new Date(scheduledDatetime + '+05:30')
+    const scheduled = parseScheduleDatetime(scheduledDatetime)
+    if (!scheduled) return
     const tick = () => {
-      const now = new Date()
-      const diff = scheduled.getTime() - now.getTime()
-      setRemaining(diff)
+      setRemaining(scheduled.getTime() - Date.now())
     }
     tick()
     const interval = setInterval(tick, 1000)
@@ -215,8 +224,7 @@ function NextMedicineCard({ reminder, onTaken, onSkipped }) {
 
   if (!reminder) return null
 
-  const scheduled = new Date(reminder.scheduled_datetime + '+05:30')
-  const timeStr = scheduled.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const timeStr = formatTime(reminder.scheduled_datetime)
   const dosageStr = [reminder.dosage, reminder.dosage_unit].filter(Boolean).join(' ')
 
   return (
@@ -248,6 +256,8 @@ function NextMedicineCard({ reminder, onTaken, onSkipped }) {
       </div>
       <div className="flex items-center gap-2 mt-3">
         <button
+          type="button"
+          aria-label={`Mark ${reminder.medicine_name} as taken`}
           onClick={() => onTaken(reminder.id)}
           className={`flex-1 py-2 rounded-xl text-sm font-medium transition-all ${
             isLight ? 'bg-emerald-500 text-white hover:bg-emerald-600' : 'bg-emerald-500 text-white hover:bg-emerald-600'
@@ -256,6 +266,8 @@ function NextMedicineCard({ reminder, onTaken, onSkipped }) {
           <CheckCircle className="w-4 h-4 inline mr-1" /> Taken
         </button>
         <button
+          type="button"
+          aria-label={`Skip ${reminder.medicine_name}`}
           onClick={() => onSkipped(reminder.id)}
           className={`flex-1 py-2 rounded-xl text-sm font-medium transition-all ${
             isLight ? 'bg-navy-100 text-navy-600 hover:bg-navy-200' : 'bg-white/[0.08] text-white/70 hover:bg-white/[0.12]'
@@ -276,19 +288,23 @@ export default function Dashboard() {
   const [reminders, setReminders] = useState([])
   const [stats, setStats] = useState(null)
   const [adherence, setAdherence] = useState(null)
+  const [refillAlerts, setRefillAlerts] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   const fetchData = async () => {
     try {
       setLoading(true)
-      const [reminderRes, adherenceRes] = await Promise.all([
+      setError('')
+      const [reminderRes, adherenceRes, refillRes] = await Promise.all([
         API.get('/reminders/today'),
         API.get('/reports/adherence'),
+        API.get('/refills/predictions'),
       ])
       setReminders(reminderRes.data.reminders || [])
       setStats(reminderRes.data.stats || null)
       setAdherence(adherenceRes.data || null)
+      setRefillAlerts(refillRes.data?.alerts || [])
     } catch {
       setError('Could not load dashboard data')
     } finally {
@@ -309,26 +325,49 @@ export default function Dashboard() {
 
   const handleTaken = async (id) => {
     try {
+      setError('')
       await API.post(`/reminders/${id}/taken`)
       await fetchData()
       window.dispatchEvent(new CustomEvent('pillsync:reminders-updated'))
-    } catch {}
+    } catch {
+      setError('Could not mark dose as taken. Please try again.')
+    }
   }
 
   const handleSkipped = async (id) => {
     try {
+      setError('')
       await API.post(`/reminders/${id}/skipped`)
       await fetchData()
       window.dispatchEvent(new CustomEvent('pillsync:reminders-updated'))
-    } catch {}
+    } catch {
+      setError('Could not skip dose. Please try again.')
+    }
   }
 
-  const now = new Date()
+  const now = Date.now()
   const pendingReminders = reminders.filter(r => r.status === 'pending')
   const upcoming = pendingReminders
-    .filter(r => new Date(r.scheduled_datetime + '+05:30').getTime() > now.getTime())
-    .sort((a, b) => new Date(a.scheduled_datetime + '+05:30').getTime() - new Date(b.scheduled_datetime + '+05:30').getTime())
-  const nextReminder = upcoming.length > 0 ? upcoming[0] : null
+    .filter(r => {
+      const d = parseScheduleDatetime(r.scheduled_datetime)
+      return d && d.getTime() > now
+    })
+    .sort((a, b) => {
+      const da = parseScheduleDatetime(a.scheduled_datetime)?.getTime() || 0
+      const db = parseScheduleDatetime(b.scheduled_datetime)?.getTime() || 0
+      return da - db
+    })
+  const overduePending = pendingReminders
+    .filter(r => {
+      const d = parseScheduleDatetime(r.scheduled_datetime)
+      return d && d.getTime() <= now
+    })
+    .sort((a, b) => {
+      const da = parseScheduleDatetime(a.scheduled_datetime)?.getTime() || 0
+      const db = parseScheduleDatetime(b.scheduled_datetime)?.getTime() || 0
+      return da - db
+    })
+  const nextReminder = overduePending[0] || upcoming[0] || null
 
   const completedReminders = reminders.filter(r => r.status !== 'pending')
 
@@ -378,6 +417,27 @@ export default function Dashboard() {
 
           <div className="grid lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 space-y-6">
+              {refillAlerts.length > 0 && (
+                <motion.div variants={itemAnim} className={`p-5 rounded-3xl border ${
+                  isLight ? 'bg-orange-50 border-orange-200' : 'bg-orange-500/10 border-orange-500/20'
+                }`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Package className={`w-4 h-4 ${isLight ? 'text-orange-600' : 'text-orange-400'}`} />
+                      <h2 className={`text-sm font-semibold ${isLight ? 'text-orange-800' : 'text-orange-300'}`}>Refill alerts</h2>
+                    </div>
+                    <Link to="/refills" className={`text-xs font-medium ${isLight ? 'text-orange-600' : 'text-orange-400'}`}>View all</Link>
+                  </div>
+                  <div className="space-y-2">
+                    {refillAlerts.slice(0, 3).map((a) => (
+                      <p key={a.medicine_id} className={`text-xs ${isLight ? 'text-orange-700' : 'text-orange-200'}`}>
+                        {a.alert_message}
+                      </p>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+
               {adherence && (
                 <motion.div variants={itemAnim} className={`${isLight ? 'bg-white rounded-3xl shadow-sm border border-navy-100' : 'glass-card'} p-5 md:p-6`}>
                   <div className="flex items-center justify-between mb-4">
@@ -431,9 +491,7 @@ export default function Dashboard() {
                     <p className={`text-sm text-center py-4 ${isLight ? 'text-navy-400' : 'text-white/40'}`}>No doses taken yet</p>
                   ) : (
                     completedReminders.map(rem => {
-                      const timeStr = rem.taken_datetime
-                        ? new Date(rem.taken_datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                        : new Date(rem.scheduled_datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                      const timeStr = formatTime(rem.taken_datetime || rem.scheduled_datetime)
                       const statusMap = { taken: 'success', missed: 'danger', skipped: 'warning', late: 'warning' }
                       const text = rem.status === 'taken' ? `Took ${rem.medicine_name}` :
                         rem.status === 'late' ? `Took ${rem.medicine_name} (late)` :

@@ -1,19 +1,30 @@
 import { NavLink, useNavigate, useLocation } from 'react-router-dom'
-import { Pill, LogOut, ChevronLeft, ChevronRight, LayoutDashboard, ScanLine, Clock, Bot, BarChart3, Settings as SettingsIcon } from 'lucide-react'
+import { Pill, LogOut, ChevronLeft, ChevronRight, LayoutDashboard, ScanLine, Clock, Bot, BarChart3, Settings as SettingsIcon, Package, Shield } from 'lucide-react'
 import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from './AuthContext'
 import { useTheme } from './ThemeContext'
 
-const navItems = [
+const baseNavItems = [
   { to: '/dashboard',    label: 'Dashboard',           icon: LayoutDashboard, color: 'emerald' },
   { to: '/add-medicine', label: 'Medicines',           icon: Pill,            color: 'emerald' },
   { to: '/ai-scanner',   label: 'Scanner',             icon: ScanLine,        color: 'violet' },
+  { to: '/refills',      label: 'Refills',             icon: Package,         color: 'orange' },
   { to: '/history',      label: 'History',             icon: Clock,           color: 'orange' },
-  { to: '/ai-assistant', label: 'AI Assistant',         icon: Bot,            color: 'cyan' },
+  { to: '/ai-assistant', label: 'Med Guide',            icon: Bot,            color: 'cyan' },
   { to: '/reports',      label: 'Reports',             icon: BarChart3,       color: 'blue' },
   { to: '/settings',     label: 'Settings',            icon: SettingsIcon,    color: 'slate' },
 ]
+
+const adminNavItem = { to: '/admin', label: 'Admin Portal', icon: Shield, color: 'orange' }
+
+function getNavItems(role) {
+  const items = [...baseNavItems]
+  if (role === 'Admin') {
+    items.splice(items.length - 1, 0, adminNavItem)
+  }
+  return items
+}
 
 const itemVariants = {
   hidden: { opacity: 0, x: -16 },
@@ -42,7 +53,7 @@ const dotColors = {
   slate: 'bg-slate-400 shadow-glow-pink',
 }
 
-export default function Sidebar() {
+export default function Sidebar({ mobileOpen = false, onClose }) {
   const [collapsed, setCollapsed] = useState(false)
   const { user, logout } = useAuth()
   const { theme } = useTheme()
@@ -54,16 +65,29 @@ export default function Sidebar() {
     navigate('/')
   }
 
+  const asideClasses = `fixed left-0 top-0 h-full ${
+    collapsed ? 'w-20' : 'w-64'
+  } z-50 flex flex-col ${
+    theme === 'light'
+      ? 'bg-white/95 backdrop-blur-2xl border-r border-navy-100'
+      : 'border-r border-white/[0.06] bg-navy-900/95 backdrop-blur-2xl'
+  } transition-transform duration-300 md:translate-x-0 ${
+    mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+  }`
+
   return (
+    <>
+      {mobileOpen && (
+        <button
+          type="button"
+          aria-label="Close menu"
+          className="fixed inset-0 bg-black/40 z-40 md:hidden"
+          onClick={onClose}
+        />
+      )}
     <motion.aside
       layout
-      className={`fixed left-0 top-0 h-full ${
-        collapsed ? 'w-20' : 'w-64'
-      } z-40 flex flex-col ${
-        theme === 'light'
-          ? 'bg-white/90 backdrop-blur-2xl border-r border-navy-100'
-          : 'border-r border-white/[0.06] bg-navy-900/80 backdrop-blur-2xl'
-      } transition-all duration-300`}
+      className={asideClasses}
     >
       <div className={`h-16 flex items-center gap-3 px-4 border-b ${
         theme === 'light' ? 'border-navy-100' : 'border-white/[0.06]'
@@ -86,7 +110,7 @@ export default function Sidebar() {
       </div>
 
       <nav className="flex-1 py-4 px-3 space-y-1 overflow-hidden">
-        {navItems.map(({ to, label, icon: Icon, color }, i) => {
+        {getNavItems(user?.role).map(({ to, label, icon: Icon, color }, i) => {
           const isActive = location.pathname === to
           return (
             <motion.div
@@ -98,6 +122,7 @@ export default function Sidebar() {
             >
               <NavLink
                 to={to}
+                onClick={onClose}
                 className={`flex items-center gap-3 px-3 py-2.5 rounded-2xl text-sm font-medium transition-all duration-200 group relative ${
                   isActive
                     ? theme === 'light' ? 'text-navy-800' : 'text-white'
@@ -171,7 +196,7 @@ export default function Sidebar() {
 
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className={`absolute -right-3 top-20 w-6 h-6 rounded-full flex items-center justify-center transition-colors ${
+        className={`absolute -right-3 top-20 w-6 h-6 rounded-full hidden md:flex items-center justify-center transition-colors ${
           theme === 'light'
             ? 'bg-white border border-navy-200 shadow-sm text-navy-400 hover:text-navy-700'
             : 'bg-navy-800 border border-white/[0.08] shadow-glass text-white/40 hover:text-white/70'
@@ -180,5 +205,6 @@ export default function Sidebar() {
         {collapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronLeft className="w-3 h-3" />}
       </button>
     </motion.aside>
+    </>
   )
 }

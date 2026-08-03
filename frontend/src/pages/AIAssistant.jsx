@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Bot, Send, Sparkles, Pill, AlertTriangle, Book, MessageCircle, Brain, Clock } from 'lucide-react'
-import { aiSuggestedPrompts, aiChatHistory } from '../data'
+import { aiSuggestedPrompts } from '../data'
 import { useTheme } from '../components/ThemeContext'
 import { AIBotIllustration } from '../components/illustrations'
 import API from '../api'
@@ -70,9 +70,9 @@ function EmptyState({ onPrompt }) {
         <div className="mx-auto mb-6">
           <AIBotIllustration className="w-32 h-32 mx-auto" />
         </div>
-        <h3 className={`text-xl font-semibold mb-2 ${isLight ? 'text-navy-700' : 'text-white'}`}>AI Medication Assistant</h3>
+        <h3 className={`text-xl font-semibold mb-2 ${isLight ? 'text-navy-700' : 'text-white'}`}>Medication Guide</h3>
         <p className={`text-sm leading-relaxed max-w-sm mx-auto ${isLight ? 'text-navy-400' : 'text-white/50'}`}>
-          Ask me anything about your medications — dosages, side effects, interactions, and more.
+          Ask about your dosages, schedule, or refill status. This is a guide based on your PillSync data — not a doctor.
         </p>
         <div className="mt-8 grid grid-cols-2 gap-3 max-w-md mx-auto">
           {[
@@ -135,9 +135,10 @@ function QuickActionChip({ icon: Icon, label, onClick }) {
 }
 
 export default function AIAssistant() {
-  const [messages, setMessages] = useState(aiChatHistory)
+  const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [isTyping, setIsTyping] = useState(false)
+  const [error, setError] = useState('')
   const bottomRef = useRef(null)
   const { theme } = useTheme()
   const isLight = theme === 'light'
@@ -152,53 +153,25 @@ export default function AIAssistant() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isTyping])
 
-  const handleSend = (text) => {
+  const handleSend = async (text) => {
     const msg = text || input
-    if (!msg.trim()) return
+    if (!msg.trim() || isTyping) return
     setInput('')
+    setError('')
     setMessages((prev) => [...prev, { role: 'user', text: msg }])
     setIsTyping(true)
-
-    setTimeout(() => {
-      const responses = {
-        'What does Aspirin do?': 'Aspirin is a nonsteroidal anti-inflammatory drug (NSAID) used to reduce pain, inflammation, and fever. At low doses (75-100mg), it is commonly used as a blood thinner to prevent heart attacks and strokes.',
-        'Explain my prescription': medicines.length > 0
-          ? `Based on your active medications:\n\n${medicines.map(m => `• **${m.name}** ${m.dosage}${m.dosage_unit} — ${m.schedules?.length || 0} time(s) daily`).join('\n')}\n\nAlways follow your doctor's instructions.`
-          : "You don't have any medicines added yet. Add medicines in the Medicines page first.",
-        'Side effects of Metformin': 'Common side effects of Metformin include nausea, diarrhea, stomach upset, and a metallic taste. These usually improve over time. Serious side effects are rare but include lactic acidosis — seek medical help if you experience muscle pain, trouble breathing, or unusual drowsiness.',
-        'Medicine interactions': 'Your current medications have no major interactions. Always consult your doctor before starting new medications.',
-        'My tomorrow schedule': medicines.length > 0
-          ? `Your schedule:\n\n${medicines.filter(m => m.is_active).map(m => {
-              const times = m.schedules?.map(s => `• **${s.reminder_time}** — ${m.name} ${m.dosage}${m.dosage_unit}`).join('\n') || ''
-              return times
-            }).filter(Boolean).join('\n') || 'No active schedules.'}`
-          : "You don't have any medicines scheduled yet.",
-        'What are my current dosages?': medicines.length > 0
-          ? `Your current dosages:\n\n${medicines.map(m => `• **${m.name}**: ${m.dosage}${m.dosage_unit}`).join('\n')}\n\nAlways follow your prescribed dosage.`
-          : "You don't have any medicines added yet.",
-        'What are the side effects of my medications?': 'Common side effects vary by medication. Consult your doctor if symptoms persist.',
-        'Any medicine interactions?': 'Your current medications have no major interactions. Always consult your doctor before starting new medications.',
-      }
-      const reply = responses[msg] || getGenericResponse(msg)
-      setMessages((prev) => [...prev, { role: 'assistant', text: reply }])
+    try {
+      const res = await API.post('/assistant/chat', { message: msg })
+      setMessages((prev) => [...prev, { role: 'assistant', text: res.data.reply || 'No response.' }])
+    } catch {
+      setError('Could not reach the medication guide. Please try again.')
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', text: 'Sorry — I could not answer right now. Please try again in a moment.' },
+      ])
+    } finally {
       setIsTyping(false)
-    }, 1000 + Math.random() * 1000)
-  }
-
-  const getGenericResponse = (msg) => {
-    const lower = msg.toLowerCase()
-    if (lower.includes('side effect')) {
-      return 'I can help with side effect information! Please specify which medication you\'d like to know about.'
     }
-    if (lower.includes('dose') || lower.includes('dosage') || lower.includes('how much')) {
-      return medicines.length > 0
-        ? `Your current dosages:\n${medicines.map(m => `• ${m.name}: ${m.dosage}${m.dosage_unit}`).join('\n')}`
-        : "You don't have any medicines added yet."
-    }
-    if (lower.includes('hello') || lower.includes('hi') || lower.includes('hey')) {
-      return 'Hello! I\'m your AI medication assistant. How can I help you today? You can ask me about your medications, dosages, side effects, or schedule.'
-    }
-    return `I understand your question about "${msg}". For the most accurate and personalized information, please consult your healthcare provider.`
   }
 
   const handlePrompt = (prompt) => {
@@ -208,9 +181,17 @@ export default function AIAssistant() {
   return (
     <div className="h-full flex flex-col max-w-4xl mx-auto">
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-4 shrink-0">
-        <h1 className={`text-2xl md:text-3xl font-bold ${isLight ? 'text-navy-800' : 'text-white'}`}>AI Assistant</h1>
-        <p className={`text-sm mt-1 ${isLight ? 'text-navy-400' : 'text-white/40'}`}>Ask questions about your medications, dosages, or schedules.</p>
+        <h1 className={`text-2xl md:text-3xl font-bold ${isLight ? 'text-navy-800' : 'text-white'}`}>Med Guide</h1>
+        <p className={`text-sm mt-1 ${isLight ? 'text-navy-400' : 'text-white/40'}`}>
+          Context-aware help based on your medicines, schedules, and refill status — not medical advice.
+        </p>
       </motion.div>
+
+      {error && (
+        <div className="mb-3 p-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm shrink-0">
+          {error}
+        </div>
+      )}
 
       <div className={`flex flex-col flex-1 min-h-0 rounded-3xl overflow-hidden border ${
         isLight ? 'bg-white border-navy-100 shadow-sm' : 'glass-card border-white/[0.08]'
@@ -219,15 +200,15 @@ export default function AIAssistant() {
           isLight ? 'border-navy-100 bg-gradient-to-r from-emerald-50 to-cyan-50' : 'border-white/[0.06] bg-gradient-to-r from-emerald-500/5 to-cyan-500/5'
         }`}>
           <Brain className={`w-4 h-4 ${isLight ? 'text-emerald-500' : 'text-emerald-400'}`} />
-          <span className={`text-xs ${isLight ? 'text-navy-500' : 'text-white/50'}`}>AI-powered medication assistant</span>
+          <span className={`text-xs ${isLight ? 'text-navy-500' : 'text-white/50'}`}>Personalized medication guide</span>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
-          {messages.length <= 1 && !isTyping ? (
+          {messages.length === 0 && !isTyping ? (
             <EmptyState onPrompt={handlePrompt} />
           ) : (
             <>
-              {messages.slice(1).map((msg, i) => (
+              {messages.map((msg, i) => (
                 <ChatMessage key={i} role={msg.role} text={msg.text} />
               ))}
               {isTyping && (
@@ -253,7 +234,7 @@ export default function AIAssistant() {
           )}
         </div>
 
-        {messages.length > 1 && !isTyping && medicines.length > 0 && (
+        {messages.length > 0 && !isTyping && medicines.length > 0 && (
           <div className={`shrink-0 px-4 py-3 border-t ${isLight ? 'border-navy-100' : 'border-white/[0.06]'}`}>
             <p className={`text-xs mb-2 ${isLight ? 'text-navy-400' : 'text-white/30'}`}>Your medicines</p>
             <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-1">
@@ -305,7 +286,7 @@ export default function AIAssistant() {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => handleSend()}
-                disabled={!input.trim()}
+                disabled={!input.trim() || isTyping}
                 className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 text-white hover:from-emerald-400 hover:to-emerald-500 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-glow-emerald"
               >
                 <Send className="w-5 h-5" />
@@ -313,7 +294,7 @@ export default function AIAssistant() {
             </div>
           </div>
 
-          {messages.length <= 1 && !isTyping && (
+          {messages.length === 0 && !isTyping && (
             <div className="px-4 pb-4">
               <div className="flex items-center gap-2 overflow-x-auto scrollbar-hide pb-1">
                 {aiSuggestedPrompts.map((prompt) => (
