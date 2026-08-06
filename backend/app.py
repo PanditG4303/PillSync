@@ -1,19 +1,38 @@
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends, HTTPException
+
+from typing import Optional
+from fastapi import FastAPI, Depends, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
-from database import engine, Base
-from auth import router as auth_router, get_current_user
+from pydantic import BaseModel, Field
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from database import engine, Base, get_db, SessionLocal
+from core.migrate import run_migrations
+from core.constants import IS_PRODUCTION
+from core.rate_limit import client_key, limiter
+from auth import router as auth_router
 from medicines import router as medicines_router
 from reminders import router as reminders_router
-from scheduler import start_scheduler, stop_scheduler
 from settings import router as settings_router
-from models import User
+from ocr import router as ocr_router
+from refills import router as refills_router
+from assistant import router as assistant_router
+from admin import router as admin_router
+from scheduler import start_scheduler, stop_scheduler
+from models import User, DeviceToken
+
+from core.security import get_current_user, resolve_target_user_id
+from services.adherence import AdherenceCalculator
+from firebase_service import send_fcm_notification, get_firebase_app
 
 load_dotenv()
 
 Base.metadata.create_all(bind=engine)
+run_migrations(engine)
 
 
 @asynccontextmanager
@@ -23,13 +42,24 @@ async def lifespan(app: FastAPI):
     stop_scheduler()
 
 
-app = FastAPI(title="PillSync API", version="2.0.0", lifespan=lifespan)
+app = FastAPI(
+    title="PillSync API",
+    version="3.1.0",
+    lifespan=lifespan,
+    docs_url=None if IS_PRODUCTION else "/docs",
+    redoc_url=None if IS_PRODUCTION else "/redoc",
+)
 
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+cors_origins = [FRONTEND_URL]
+if not IS_PRODUCTION:
+    for origin in ("http://localhost:5173", "http://127.0.0.1:5173"):
+        if origin not in cors_origins:
+            cors_origins.append(origin)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_URL],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -39,139 +69,106 @@ app.include_router(auth_router)
 app.include_router(medicines_router)
 app.include_router(reminders_router)
 app.include_router(settings_router)
+app.include_router(ocr_router)
+app.include_router(refills_router)
+app.include_router(assistant_router)
+app.include_router(admin_router)
+
+
+class FcmRegisterRequest(BaseModel):
+    fcm_token: str = Field(..., min_length=1)
+    device_type: str = "web"
 
 
 @app.get("/")
 def root():
-    return {"message": "PillSync API is running"}
+    return {"message": "PillSync API is running", "version": "3.1.0"}
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+@app.get("/ready")
+def ready():
+    try:
+        db = SessionLocal()
+        try:
+            db.execute(text("SELECT 1"))
+        finally:
+            db.close()
+        return {"status": "ready"}
+    except Exception as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not_ready", "detail": str(exc)},
+        )
 
 
 @app.get("/reports/adherence")
-def get_adherence(user: User = Depends(get_current_user)):
-    from datetime import date, time, datetime, timedelta
-    from database import get_db
-    from models import MedicationHistory
-
-    db = next(get_db())
-    try:
-        today = date.today()
-        week_start = today - timedelta(days=today.weekday())
-
-        week_start_dt = datetime.combine(week_start, time.min)
-        today_end = datetime.combine(today, time.max)
-
-        records = (
-            db.query(MedicationHistory)
-            .filter(
-                MedicationHistory.user_id == user.id,
-                MedicationHistory.scheduled_datetime >= week_start_dt,
-                MedicationHistory.scheduled_datetime <= today_end,
-            )
-            .all()
-        )
-
-        total = len(records)
-        taken = sum(1 for r in records if r.status in ("taken", "late"))
-        missed = sum(1 for r in records if r.status == "missed")
-        skipped = sum(1 for r in records if r.status == "skipped")
-        pending = sum(1 for r in records if r.status == "pending")
-
-        completed = taken + missed + skipped
-        adherence = round(taken / completed * 100) if completed > 0 else (100 if total == 0 else 0)
-
-        daily = {}
-        for r in records:
-            day = r.scheduled_datetime.date().isoformat()
-            if day not in daily:
-                daily[day] = {"total": 0, "taken": 0}
-            daily[day]["total"] += 1
-            if r.status in ("taken", "late"):
-                daily[day]["taken"] += 1
-
-        daily_adherence = []
-        for i in range(7):
-            day = (week_start + timedelta(days=i)).isoformat()
-            if day in daily:
-                d = daily[day]
-                daily_adherence.append(round(d["taken"] / d["total"] * 100) if d["total"] > 0 else 0)
-            else:
-                daily_adherence.append(0)
-
-        return {
-            "daily_adherence": daily_adherence,
-            "labels": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
-            "stats": {
-                "total_scheduled": total,
-                "taken": taken,
-                "missed": missed,
-                "skipped": skipped,
-                "pending": pending,
-                "adherence": adherence,
-            },
-        }
-    finally:
-        db.close()
+def get_adherence(
+    period: str = Query("week", pattern="^(week|month)$"),
+    patient_id: Optional[int] = Query(None),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    target_id = resolve_target_user_id(db, user, patient_id)
+    if period == "month":
+        return AdherenceCalculator.monthly_report(db, target_id)
+    return AdherenceCalculator.weekly_report(db, target_id)
 
 
 @app.post("/fcm/register")
 def register_fcm_token(
-    data: dict,
+    data: FcmRegisterRequest,
     user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    from database import get_db
-    from models import DeviceToken
-
-    db = next(get_db())
-    try:
-        token_str = data.get("fcm_token")
-        device_type = data.get("device_type", "web")
-        if not token_str:
-            raise HTTPException(status_code=400, detail="fcm_token is required")
-
-        existing = db.query(DeviceToken).filter(DeviceToken.fcm_token == token_str).first()
-        if existing:
-            existing.user_id = user.id
-            existing.device_type = device_type
-        else:
-            token = DeviceToken(user_id=user.id, fcm_token=token_str, device_type=device_type)
-            db.add(token)
-
-        db.commit()
-        return {"message": "FCM token registered successfully"}
-    finally:
-        db.close()
+    existing = db.query(DeviceToken).filter(DeviceToken.fcm_token == data.fcm_token).first()
+    if existing:
+        existing.user_id = user.id
+        existing.device_type = data.device_type
+    else:
+        db.add(
+            DeviceToken(
+                user_id=user.id,
+                fcm_token=data.fcm_token,
+                device_type=data.device_type,
+            )
+        )
+    db.commit()
+    return {"message": "FCM token registered successfully"}
 
 
 @app.post("/fcm/test")
-def test_fcm(user: User = Depends(get_current_user)):
-    """Development-only endpoint to test FCM push notifications."""
-    from firebase_service import send_fcm_notification, get_firebase_app
-    from database import get_db
-    from models import DeviceToken
+def test_fcm(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if IS_PRODUCTION:
+        from fastapi import HTTPException
 
-    db = next(get_db())
-    try:
-        token = db.query(DeviceToken).filter(DeviceToken.user_id == user.id).first()
-        firebase_init = get_firebase_app() is not None
-        device_count = db.query(DeviceToken).filter(DeviceToken.user_id == user.id).count()
+        raise HTTPException(status_code=404, detail="Not found")
 
-        result = {
-            "firebase_initialized": firebase_init,
-            "registered_devices": device_count,
-        }
+    limiter.check(client_key(request, "fcm-test"), limit=5, window_seconds=60)
+    tokens = db.query(DeviceToken).filter(DeviceToken.user_id == user.id).all()
+    result = {
+        "firebase_initialized": get_firebase_app() is not None,
+        "registered_devices": len(tokens),
+        "send_attempted": False,
+        "send_successful": False,
+    }
 
-        if not token:
-            result["send_attempted"] = False
-            return result
-
-        sent = send_fcm_notification(
-            token.fcm_token,
-            "PillSync Test",
-            "Push notifications are working.",
-            {"type": "test"},
-        )
-        result["send_attempted"] = True
-        result["send_successful"] = sent
+    if not tokens:
         return result
-    finally:
-        db.close()
+
+    result["send_attempted"] = True
+    result["send_successful"] = send_fcm_notification(
+        tokens[0].fcm_token,
+        "PillSync Test",
+        "Push notifications are working.",
+        {"type": "test"},
+    )
+    return result

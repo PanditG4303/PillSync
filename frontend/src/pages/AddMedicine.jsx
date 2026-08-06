@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Pill, Plus, Clock, CalendarDays, FileText, ArrowLeft, Save, Trash2,
-  Edit3, Power, PowerOff, X, AlertCircle, CheckCircle, Search,
+  Edit3, Power, PowerOff, X, AlertCircle, Search,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../components/ThemeContext'
@@ -11,6 +11,10 @@ import API from '../api'
 
 const medicineTypes = [
   'Tablet', 'Capsule', 'Liquid', 'Injection', 'Cream', 'Inhaler', 'Drops', 'Other',
+]
+
+const diseaseCategories = [
+  'Blood Pressure', 'Diabetes', 'Thyroid', 'Antibiotics', 'Vitamins', 'Heart Medications', 'General', 'Other',
 ]
 
 const dayOptions = [
@@ -73,10 +77,15 @@ function MedicineForm({ initial, onSave, onCancel, loading }) {
     dosage: initial?.dosage || '',
     dosage_unit: initial?.dosage_unit || '',
     medicine_type: initial?.medicine_type || 'Tablet',
+    disease_category: initial?.disease_category || 'General',
     instructions: initial?.instructions || '',
     start_date: initial?.start_date || '',
     end_date: initial?.end_date || '',
     is_active: initial?.is_active !== undefined ? initial.is_active : true,
+    quantity_total: initial?.quantity_total ?? 30,
+    stock_remaining: initial?.stock_remaining ?? initial?.quantity_total ?? 30,
+    quantity_per_dose: initial?.quantity_per_dose ?? 1,
+    low_stock_threshold_days: initial?.low_stock_threshold_days ?? 5,
     schedules: initial?.schedules?.length
       ? initial.schedules.map(s => ({ reminder_time: s.reminder_time, days_of_week: s.days_of_week || null }))
       : [{ reminder_time: '08:00', days_of_week: null }],
@@ -173,6 +182,46 @@ function MedicineForm({ initial, onSave, onCancel, loading }) {
               <option key={t} value={t} className={isLight ? 'bg-white' : 'bg-navy-800'}>{t}</option>
             ))}
           </select>
+        </div>
+
+        <div>
+          <label className={`block text-sm font-medium mb-1.5 ${isLight ? 'text-navy-600' : 'text-white/70'}`}>Condition / Category</label>
+          <select
+            value={form.disease_category}
+            onChange={(e) => setForm({ ...form, disease_category: e.target.value })}
+            className={`${isLight ? 'bg-navy-50 border-navy-200 text-navy-700' : ''} glass-select`}
+          >
+            {diseaseCategories.map(t => (
+              <option key={t} value={t} className={isLight ? 'bg-white' : 'bg-navy-800'}>{t}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className={`block text-sm font-medium mb-1.5 ${isLight ? 'text-navy-600' : 'text-white/70'}`}>Stock quantity</label>
+          <input
+            type="number"
+            min="0"
+            value={form.quantity_total}
+            onChange={(e) => setForm({
+              ...form,
+              quantity_total: e.target.value,
+              stock_remaining: e.target.value,
+            })}
+            className={`${isLight ? 'bg-navy-50 border-navy-200 text-navy-700' : ''} glass-input`}
+          />
+        </div>
+
+        <div>
+          <label className={`block text-sm font-medium mb-1.5 ${isLight ? 'text-navy-600' : 'text-white/70'}`}>Qty per dose</label>
+          <input
+            type="number"
+            min="0.1"
+            step="0.5"
+            value={form.quantity_per_dose}
+            onChange={(e) => setForm({ ...form, quantity_per_dose: e.target.value })}
+            className={`${isLight ? 'bg-navy-50 border-navy-200 text-navy-700' : ''} glass-input`}
+          />
         </div>
 
         <div>
@@ -332,6 +381,8 @@ function MedicineCard({ medicine, onEdit, onToggle, onDelete }) {
             </p>
             <p className={`text-xs ${isLight ? 'text-navy-400' : 'text-white/40'}`}>
               {medicine.medicine_type || 'Medicine'}
+              {medicine.disease_category ? ` · ${medicine.disease_category}` : ''}
+              {medicine.stock_remaining != null ? ` · Stock ${medicine.stock_remaining}` : ''}
             </p>
           </div>
         </div>
@@ -437,10 +488,17 @@ export default function AddMedicine() {
     try {
       setSaving(true)
       setError('')
+      const payload = {
+        ...data,
+        quantity_total: Number(data.quantity_total) || 0,
+        stock_remaining: Number(data.stock_remaining ?? data.quantity_total) || 0,
+        quantity_per_dose: Number(data.quantity_per_dose) || 1,
+        low_stock_threshold_days: Number(data.low_stock_threshold_days) || 5,
+      }
       if (editing?.id) {
-        await API.put(`/medicines/${editing.id}`, data)
+        await API.put(`/medicines/${editing.id}`, payload)
       } else {
-        await API.post('/medicines', data)
+        await API.post('/medicines', payload)
       }
       setShowForm(false)
       setEditing(null)

@@ -3,23 +3,29 @@ import { getMessaging, getToken, onMessage } from 'firebase/messaging'
 import API from './api'
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDUJ-9J8WzjH9DZ85XERx4Z6S9I1m_ODzA",
-  authDomain: "pillsync-a9d6f.firebaseapp.com",
-  projectId: "pillsync-a9d6f",
-  storageBucket: "pillsync-a9d6f.firebasestorage.app",
-  messagingSenderId: "438282937227",
-  appId: "1:438282937227:web:5e4df8f40ba8400765058e",
-  measurementId: "G-KD2FERG7EK",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || '',
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || '',
 }
+
+const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY || ''
 
 let messaging = null
 let firebaseApp = null
 let swRegistration = null
 
+export function isFirebaseConfigured() {
+  return Boolean(firebaseConfig.apiKey && firebaseConfig.projectId && vapidKey)
+}
+
 export function initFirebase() {
   if (firebaseApp) return messaging
-  if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
-    console.warn('[FCM] Firebase config missing')
+  if (!isFirebaseConfigured()) {
+    console.warn('[FCM] Firebase env not configured — push disabled')
     return null
   }
   try {
@@ -54,59 +60,31 @@ export function getSwRegistration() {
 }
 
 export async function requestNotificationPermission() {
-  console.log('[FCM] Starting setup')
-  if (!('Notification' in window)) {
-    console.warn('[FCM] Notifications not supported')
-    return null
-  }
+  if (!isFirebaseConfigured()) return null
+  if (!('Notification' in window)) return null
 
   const currentPerm = Notification.permission
-  if (currentPerm === 'denied') {
-    console.warn('[FCM] Notification permission denied')
-    return null
-  }
-
+  if (currentPerm === 'denied') return null
   if (currentPerm === 'default') {
     const perm = await Notification.requestPermission()
-    if (perm !== 'granted') {
-      console.warn('[FCM] Permission: denied')
-      return null
-    }
+    if (perm !== 'granted') return null
   }
 
-  console.log('[FCM] Permission: granted')
-
-  if (!messaging) {
-    initFirebase()
-  }
-  if (!messaging) {
-    return null
-  }
+  if (!messaging) initFirebase()
+  if (!messaging) return null
 
   await registerServiceWorker()
 
   try {
     const currentToken = await getToken(messaging, {
-      vapidKey: 'BIYW-edv9wpZdKl6VYShugyZLMas7eTfMBa-QZXqgpFzI0TJZqiOxs5KIHqq3JSLy_k5OnVt6aePDXYft6e7FXU',
+      vapidKey,
       serviceWorkerRegistration: swRegistration,
     })
     if (currentToken) {
-      console.log('[FCM] Token generated')
-      let userId = null
-      try {
-        const stored = localStorage.getItem('pillsync_user')
-        if (stored) userId = JSON.parse(stored).id
-      } catch {}
-      if (userId) {
-        console.log(`[FCM] Registering device for user: ${userId}`)
-      }
       await API.post('/fcm/register', {
         fcm_token: currentToken,
         device_type: 'web',
       })
-      console.log('[FCM] Device registered successfully')
-    } else {
-      console.warn('[FCM] Token not generated')
     }
     return currentToken
   } catch (e) {
@@ -116,14 +94,8 @@ export async function requestNotificationPermission() {
 }
 
 export function onForegroundMessage(callback) {
-  if (!messaging) {
-    console.warn('[FCM] Messaging not initialized for foreground handler')
-    return
-  }
-  onMessage(messaging, (payload) => {
-    console.log('[FCM] Foreground message received')
-    callback(payload)
-  })
+  if (!messaging) return
+  onMessage(messaging, (payload) => callback(payload))
 }
 
 export function hasPermission() {

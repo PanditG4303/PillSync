@@ -94,16 +94,16 @@ export default function Landing() {
                 transition={{ delay: 0.2 }}
                 className="inline-flex items-center gap-2 px-4 py-1.5 bg-emerald-500/10 text-emerald-400 text-sm font-medium rounded-full border border-emerald-500/20 mb-6"
               >
-                <Sparkles className="w-4 h-4" /> AI-Powered Healthcare Platform
+                <Sparkles className="w-4 h-4" /> Medication adherence made simple
               </motion.div>
               <h1 className={`text-4xl sm:text-5xl lg:text-7xl font-extrabold leading-[1.05] tracking-tight ${theme === 'light' ? 'text-navy-800' : 'text-white'}`}>
-                AI Powered{' '}
+                Your{' '}
                 <span className="text-gradient">Medication</span>{' '}
                 Companion
               </h1>
               <p className={`mt-6 text-lg max-w-xl mx-auto lg:mx-0 leading-relaxed ${theme === 'light' ? 'text-navy-400' : 'text-white/50'}`}>
-                Never miss a dose again. PillSync uses advanced AI to help you manage medications,
-                track adherence, and stay on top of your health journey.
+                Never miss a dose again. PillSync helps you manage medications,
+                track adherence, scan prescriptions, and stay ahead of refills.
               </p>
               <div className="mt-10 flex flex-col sm:flex-row items-center gap-3 justify-center lg:justify-start">
                 <Link to="/register" className="btn-primary px-8 py-4 text-base w-full sm:w-auto shadow-glow-emerald">
@@ -113,10 +113,20 @@ export default function Landing() {
                   Guest Demo
                 </button>
               </div>
-              <div className={`mt-10 flex items-center gap-8 justify-center lg:justify-start text-sm ${theme === 'light' ? '' : ''}`}>
+              <div className={`mt-10 flex items-center gap-8 justify-center lg:justify-start text-sm`}>
                 <div className="text-center">
-                  <p className={`text-2xl font-bold ${theme === 'light' ? 'text-navy-700' : 'text-white'}`}>10K+</p>
-                  <p className={`${theme === 'light' ? 'text-navy-400' : 'text-white/40'} text-xs mt-1`}>Active Users</p>
+                  <p className={`text-2xl font-bold ${theme === 'light' ? 'text-navy-700' : 'text-white'}`}>Reminders</p>
+                  <p className={`${theme === 'light' ? 'text-navy-400' : 'text-white/40'} text-xs mt-1`}>On-time dose alerts</p>
+                </div>
+                <div className={`w-px h-8 ${theme === 'light' ? 'bg-navy-200' : 'bg-white/10'}`} />
+                <div className="text-center">
+                  <p className={`text-2xl font-bold ${theme === 'light' ? 'text-navy-700' : 'text-white'}`}>OCR</p>
+                  <p className={`${theme === 'light' ? 'text-navy-400' : 'text-white/40'} text-xs mt-1`}>Label scanning</p>
+                </div>
+                <div className={`w-px h-8 ${theme === 'light' ? 'bg-navy-200' : 'bg-white/10'}`} />
+                <div className="text-center">
+                  <p className={`text-2xl font-bold ${theme === 'light' ? 'text-navy-700' : 'text-white'}`}>Refills</p>
+                  <p className={`${theme === 'light' ? 'text-navy-400' : 'text-white/40'} text-xs mt-1`}>Stock predictions</p>
                 </div>
                 <div className={`w-px h-10 ${theme === 'light' ? 'bg-navy-200' : 'bg-white/[0.08]'}`} />
                 <div className="text-center">
@@ -363,18 +373,18 @@ export default function Landing() {
               transition={{ duration: 0.6 }}
             >
               <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-medium border border-emerald-500/20 mb-4">
-                <ScanLine className="w-3 h-3" /> AI OCR Technology
+                <ScanLine className="w-3 h-3" /> Prescription OCR
               </span>
               <h2 className={`text-3xl md:text-4xl font-bold leading-tight ${theme === 'light' ? 'text-navy-800' : 'text-white'}`}>
-                AI-Powered{' '}
+                Smart{' '}
                 <span className="text-gradient">Prescription Scanner</span>
               </h2>
               <p className={`mt-4 text-lg leading-relaxed ${theme === 'light' ? 'text-navy-400' : 'text-white/50'}`}>
-                Just snap a photo of your prescription and our AI instantly extracts medication names,
-                dosages, and instructions. No manual entry required.
+                Snap a photo of your prescription label and PillSync extracts medication names,
+                dosages, and schedule hints so you can review and save with fewer taps.
               </p>
               <ul className="mt-6 space-y-3">
-                {['99.9% OCR accuracy', 'Supports 50+ languages', 'Auto-fills medication details', 'Secure encrypted processing'].map((item) => (
+                {['Works with common label photos', 'Paste-text fallback when OCR is unavailable', 'Review before saving medicines', 'Private to your account'].map((item) => (
                   <li key={item} className={`flex items-center gap-3 ${theme === 'light' ? 'text-navy-500' : 'text-white/60'}`}>
                     <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
                     <span>{item}</span>

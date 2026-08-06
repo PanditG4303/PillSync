@@ -4,6 +4,7 @@ import { Clock, Search, CalendarDays, Pill, CheckCircle, XCircle, AlertCircle, L
 import { useTheme } from '../components/ThemeContext'
 import { HealthIllustration } from '../components/illustrations'
 import API from '../api'
+import { formatDate, formatTime, isSameLocalDay } from '../utils/datetime'
 
 const statusConfig = {
   taken: { icon: CheckCircle, color: 'badge-emerald', dot: 'bg-emerald-500' },
@@ -19,15 +20,9 @@ function HistoryCard({ item }) {
   const config = statusConfig[item.status] || statusConfig.pending
   const StatusIcon = config.icon
 
-  const dateStr = item.scheduled_datetime
-    ? new Date(item.scheduled_datetime).toLocaleDateString()
-    : ''
-  const timeStr = item.scheduled_datetime
-    ? new Date(item.scheduled_datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    : ''
-  const takenTimeStr = item.taken_datetime
-    ? new Date(item.taken_datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    : null
+  const dateStr = formatDate(item.scheduled_datetime)
+  const timeStr = formatTime(item.scheduled_datetime)
+  const takenTimeStr = item.taken_datetime ? formatTime(item.taken_datetime) : null
 
   return (
     <motion.div
@@ -82,6 +77,7 @@ export default function History() {
   const [filter, setFilter] = useState('all')
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
   const { theme } = useTheme()
   const isLight = theme === 'light'
 
@@ -94,10 +90,12 @@ export default function History() {
   const fetchHistory = async () => {
     try {
       setLoading(true)
+      setError('')
       const res = await API.get(`/reminders/history?filter=${filter}`)
       setRecords(res.data || [])
     } catch {
       setRecords([])
+      setError('Could not load history. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -112,15 +110,8 @@ export default function History() {
     return (log.medicine_name || '').toLowerCase().includes(search.toLowerCase())
   })
 
-  const todayRecords = filtered.filter(r => {
-    if (!r.scheduled_datetime) return false
-    const today = new Date().toDateString()
-    return new Date(r.scheduled_datetime).toDateString() === today
-  })
-  const earlierRecords = filtered.filter(r => {
-    if (!r.scheduled_datetime) return false
-    return new Date(r.scheduled_datetime).toDateString() !== new Date().toDateString()
-  })
+  const todayRecords = filtered.filter((r) => isSameLocalDay(r.scheduled_datetime))
+  const earlierRecords = filtered.filter((r) => !isSameLocalDay(r.scheduled_datetime))
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -164,6 +155,12 @@ export default function History() {
           </div>
         </div>
       </motion.div>
+
+      {error && (
+        <div className="mb-4 p-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+          {error}
+        </div>
+      )}
 
       {loading ? (
         <div className="grid sm:grid-cols-2 gap-3">

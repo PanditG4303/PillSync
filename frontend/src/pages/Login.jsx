@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { Mail, Lock, Eye, EyeOff, Pill, ArrowRight, Github, ChromeIcon as Google, Sparkles, HeartPulse, ScanLine, Bot, Bell } from 'lucide-react'
+import { Mail, Lock, Eye, EyeOff, Pill, ArrowRight, Sparkles, HeartPulse, ScanLine, Bot, Bell } from 'lucide-react'
 import { useAuth, getErrorMessage } from '../components/AuthContext'
 import { useTheme } from '../components/ThemeContext'
 
@@ -173,28 +173,6 @@ export default function Login() {
                 {loading ? 'Signing in...' : 'Sign In'} <ArrowRight className="w-4 h-4" />
               </motion.button>
             </form>
-
-            <div className="relative my-6">
-              <div className="absolute inset-0 flex items-center"><div className={`w-full border-t ${theme === 'light' ? 'border-navy-100' : 'border-white/[0.08]'}`} /></div>
-              <div className="relative flex justify-center"><span className={`px-3 text-xs ${theme === 'light' ? 'bg-white text-navy-400' : 'bg-navy-900 text-white/30'}`}>Or continue with</span></div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <motion.button
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.99 }}
-                className={`btn-secondary py-2.5 text-xs ${theme === 'light' ? '!bg-white !border-navy-200 !text-navy-600 hover:!bg-navy-50' : ''}`}
-              >
-                <Google className="w-4 h-4" /> Google
-              </motion.button>
-              <motion.button
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.99 }}
-                className={`btn-secondary py-2.5 text-xs ${theme === 'light' ? '!bg-white !border-navy-200 !text-navy-600 hover:!bg-navy-50' : ''}`}
-              >
-                <Github className="w-4 h-4" /> GitHub
-              </motion.button>
-            </div>
 
             <p className={`text-center text-sm mt-6 ${theme === 'light' ? 'text-navy-400' : 'text-white/40'}`}>
               Don&apos;t have an account?{' '}
