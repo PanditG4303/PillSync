@@ -38,6 +38,82 @@ class AdherenceCalculator:
             "adherence": adherence,
         }
 
+    @staticmethod
+    def dose_windows(records) -> dict:
+        """Distribution of scheduled/taken/missed doses across day windows."""
+        windows = {
+            "Morning": {"scheduled": 0, "taken": 0, "missed": 0},
+            "Afternoon": {"scheduled": 0, "taken": 0, "missed": 0},
+            "Evening": {"scheduled": 0, "taken": 0, "missed": 0},
+            "Night": {"scheduled": 0, "taken": 0, "missed": 0},
+        }
+        for record in records:
+            hour = record.scheduled_datetime.hour
+            if 5 <= hour < 11:
+                key = "Morning"
+            elif 11 <= hour < 17:
+                key = "Afternoon"
+            elif 17 <= hour < 23:
+                key = "Evening"
+            else:
+                key = "Night"
+            windows[key]["scheduled"] += 1
+            if record.status in TAKEN_STATUSES:
+                windows[key]["taken"] += 1
+            elif record.status == STATUS_MISSED:
+                windows[key]["missed"] += 1
+        return windows
+
+    @staticmethod
+    def per_medicine(records) -> list:
+        """Attribution of adherence per medicine, worst offenders first."""
+        agg: dict[str, dict] = defaultdict(lambda: {"scheduled": 0, "taken": 0, "missed": 0, "skipped": 0})
+        for record in records:
+            med = record.medicine
+            key = med.name if med else "Unknown"
+            agg[key]["scheduled"] += 1
+            if record.status in TAKEN_STATUSES:
+                agg[key]["taken"] += 1
+            elif record.status == STATUS_MISSED:
+                agg[key]["missed"] += 1
+            elif record.status == STATUS_SKIPPED:
+                agg[key]["skipped"] += 1
+        rows = []
+        for name, counts in agg.items():
+            completed = counts["taken"] + counts["missed"] + counts["skipped"]
+            rows.append(
+                {
+                    "name": name,
+                    **counts,
+                    "adherence": round(counts["taken"] / completed * 100) if completed else 100,
+                }
+            )
+        rows.sort(key=lambda r: r["missed"], reverse=True)
+        return rows
+
+    @staticmethod
+    def compute_streak(records) -> int:
+        """Consecutive days (ending today) with perfect completion of scheduled doses."""
+        from collections import defaultdict
+
+        daily: dict[str, dict] = defaultdict(lambda: {"total": 0, "taken": 0})
+        for record in records:
+            day_key = record.scheduled_datetime.date()
+            daily[day_key]["total"] += 1
+            if record.status in TAKEN_STATUSES:
+                daily[day_key]["taken"] += 1
+
+        today = today_local()
+        streak = 0
+        day = today
+        if daily.get(day) and daily[day]["total"] > 0 and daily[day]["taken"] < daily[day]["total"]:
+            # Today is still in progress; start counting from yesterday.
+            day = day - timedelta(days=1)
+        while daily.get(day) and daily[day]["total"] > 0 and daily[day]["taken"] == daily[day]["total"]:
+            streak += 1
+            day = day - timedelta(days=1)
+        return streak
+
     @classmethod
     def _period_report(cls, db: Session, user_id: int, days: int, label_mode: str) -> dict:
         today = today_local()
@@ -95,6 +171,13 @@ class AdherenceCalculator:
                 "adherence": stats["adherence"],
             },
             "period_days": days,
+            "dose_windows": cls.dose_windows(records),
+            "per_medicine": cls.per_medicine(records),
+            "expected_vs_taken": {
+                "expected": stats["total"],
+                "taken": stats["taken"],
+                "difference": max(stats["total"] - stats["taken"], 0),
+            },
         }
 
     @classmethod
@@ -155,6 +238,7 @@ class AdherenceCalculator:
                 "skipped": stats["skipped"],
                 "pending": stats["pending"],
                 "adherence": stats["adherence"],
+                "streak": cls.compute_streak(records),
             },
             "period_days": days,
             "refill_summary": {
@@ -163,6 +247,13 @@ class AdherenceCalculator:
                 "alerts": refill["alerts"][:5],
             },
             "by_category": dict(by_category),
+            "dose_windows": cls.dose_windows(records),
+            "per_medicine": cls.per_medicine(records),
+            "expected_vs_taken": {
+                "expected": stats["total"],
+                "taken": stats["taken"],
+                "difference": max(stats["total"] - stats["taken"], 0),
+            },
         }
 
     @classmethod

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Clock, Search, CalendarDays, Pill, CheckCircle, XCircle, AlertCircle, ListFilter } from 'lucide-react'
+import { Clock, Search, CalendarDays, Pill, CheckCircle, XCircle, AlertCircle, ListFilter, ArrowDownWideNarrow, ArrowUpWideNarrow } from 'lucide-react'
 import { useTheme } from '../components/ThemeContext'
 import { HealthIllustration } from '../components/illustrations'
 import API from '../api'
@@ -75,6 +75,7 @@ function EmptyState() {
 export default function History() {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
+  const [sortDir, setSortDir] = useState('desc')
   const [records, setRecords] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -91,7 +92,7 @@ export default function History() {
     try {
       setLoading(true)
       setError('')
-      const res = await API.get(`/reminders/history?filter=${filter}`)
+      const res = await API.get(`/reminders/history?filter=${filter}&sort=${sortDir}`)
       setRecords(res.data || [])
     } catch {
       setRecords([])
@@ -103,7 +104,7 @@ export default function History() {
 
   useEffect(() => {
     fetchHistory()
-  }, [filter])
+  }, [filter, sortDir])
 
   const filtered = records.filter((log) => {
     if (!search.trim()) return true
@@ -152,6 +153,17 @@ export default function History() {
                 ))}
               </select>
             </div>
+            <button
+              onClick={() => setSortDir(prev => prev === 'desc' ? 'asc' : 'desc')}
+              title={sortDir === 'desc' ? 'Sorting newest first' : 'Sorting oldest first'}
+              className={`p-2 rounded-2xl transition-all ${
+                isLight
+                  ? 'bg-navy-50 border border-navy-200 text-navy-500 hover:text-emerald-600 hover:border-emerald-300'
+                  : 'bg-white/[0.04] border border-white/[0.08] text-white/50 hover:text-emerald-400 hover:border-emerald-500/40'
+              }`}
+            >
+              {sortDir === 'desc' ? <ArrowDownWideNarrow className="w-4 h-4" /> : <ArrowUpWideNarrow className="w-4 h-4" />}
+            </button>
           </div>
         </div>
       </motion.div>

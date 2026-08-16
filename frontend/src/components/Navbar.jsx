@@ -64,14 +64,17 @@ export default function Navbar({ onMenuClick }) {
 
   const fetchNotifications = async () => {
     try {
-      const res = await API.get('/reminders/today')
-      const pending = (res.data.reminders || []).filter(r => r.status === 'pending')
-      setNotifBadge(pending.length)
+      const res = await API.get('/notifications')
+      const items = res.data.notifications || []
+      setNotifBadge(res.data.unread_count || 0)
       setNotifications(
-        pending.slice(0, 5).map(r => ({
-          text: `Time to take ${r.medicine_name}`,
-          time: formatTime(r.scheduled_datetime),
-          type: 'reminder',
+        items.slice(0, 8).map(n => ({
+          id: n.id,
+          text: n.body || n.title || 'Notification',
+          title: n.title,
+          time: n.created_at ? formatTime(n.created_at) : '',
+          type: n.type === 'refill' ? 'refill' : 'reminder',
+          is_read: !!n.is_read,
         }))
       )
     } catch {
@@ -86,6 +89,14 @@ export default function Navbar({ onMenuClick }) {
     if (!showNotifications) {
       fetchNotifications()
     }
+  }
+
+  const handleMarkAllRead = async () => {
+    try {
+      await API.post('/notifications/read-all')
+      setNotifBadge(0)
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
+    } catch {}
   }
 
   useEffect(() => {
@@ -252,7 +263,7 @@ export default function Navbar({ onMenuClick }) {
                 exit={{ opacity: 0, y: 8, scale: 0.96 }}
                 transition={{ duration: 0.15 }}
                 className={`absolute top-full mt-2 left-0 right-0 rounded-2xl overflow-hidden z-50 ${
-                  theme === 'light' ? 'bg-white border border-navy-100 shadow-lg' : 'glass-card'
+                  theme === 'light' ? 'bg-white border border-navy-100 shadow-lg' : 'dropdown-card'
                 }`}
                 ref={searchResultsRef}
               >
@@ -331,7 +342,7 @@ export default function Navbar({ onMenuClick }) {
                   exit={{ opacity: 0, y: 8, scale: 0.96 }}
                   transition={{ duration: 0.15 }}
                   className={`absolute right-0 mt-2 w-64 rounded-3xl overflow-hidden ${
-                    theme === 'light' ? 'bg-white border border-navy-100 shadow-lg' : 'glass-card'
+                    theme === 'light' ? 'bg-white border border-navy-100 shadow-lg' : 'dropdown-card'
                   }`}
                 >
                   <div className={`p-4 border-b ${theme === 'light' ? 'border-navy-100' : 'border-white/[0.06]'}`}>
@@ -411,29 +422,40 @@ export default function Navbar({ onMenuClick }) {
                 exit={{ opacity: 0, y: 8, scale: 0.96 }}
                 transition={{ duration: 0.15 }}
                 className={`absolute right-0 mt-2 w-80 rounded-3xl overflow-hidden ${
-                  theme === 'light' ? 'bg-white border border-navy-100 shadow-lg' : 'glass-card'
+                  theme === 'light' ? 'bg-white border border-navy-100 shadow-lg' : 'dropdown-card'
                 }`}
               >
-                <div className={`p-4 border-b ${theme === 'light' ? 'border-navy-100' : 'border-white/[0.06]'}`}>
+                <div className={`p-4 border-b flex items-center justify-between ${theme === 'light' ? 'border-navy-100' : 'border-white/[0.06]'}`}>
                   <p className={`text-sm font-semibold ${theme === 'light' ? 'text-navy-700' : 'text-white/90'}`}>Notifications</p>
+                  {notifications.length > 0 && (
+                    <button
+                      onClick={handleMarkAllRead}
+                      className={`text-xs font-medium transition-colors ${theme === 'light' ? 'text-emerald-600 hover:text-emerald-500' : 'text-emerald-400 hover:text-emerald-300'}`}
+                    >
+                      Mark all read
+                    </button>
+                  )}
                 </div>
-                <div className="p-2">
+                <div className="p-2 max-h-96 overflow-y-auto">
                   {notifications.length === 0 ? (
                     <div className={`p-4 text-center text-sm ${theme === 'light' ? 'text-navy-400' : 'text-white/40'}`}>
                       No notifications
                     </div>
                   ) : (
                     notifications.map((n, i) => (
-                      <div key={i} className={`flex items-start gap-3 p-3 rounded-2xl cursor-pointer ${
-                        theme === 'light' ? 'hover:bg-navy-50' : 'hover:bg-white/[0.04]'
-                      } transition-colors`}>
+                      <div key={n.id || i} className={`flex items-start gap-3 p-3 rounded-2xl ${
+                        theme === 'light' ? 'hover:bg-navy-50' : 'hover:bg-white/[0.06]'
+                      } transition-colors ${!n.is_read ? (theme === 'light' ? 'bg-emerald-50/70' : 'bg-emerald-500/[0.12]') : ''}`}>
                         <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${notifIcons[n.type]}`}>
                           <Bell className="w-4 h-4" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className={`text-sm ${theme === 'light' ? 'text-navy-600' : 'text-white/80'}`}>{n.text}</p>
-                          <p className={`text-xs ${theme === 'light' ? 'text-navy-400' : 'text-white/30'} mt-0.5`}>{n.time}</p>
+                          <p className={`text-sm ${theme === 'light' ? 'text-navy-600' : 'text-white/90'}`}>{n.text}</p>
+                          {n.time && <p className={`text-xs ${theme === 'light' ? 'text-navy-400' : 'text-white/40'} mt-0.5`}>{n.time}</p>}
                         </div>
+                        {!n.is_read && (
+                          <span className={`w-2 h-2 rounded-full shrink-0 mt-1 ${theme === 'light' ? 'bg-emerald-500' : 'bg-emerald-400'}`} />
+                        )}
                       </div>
                     ))
                   )}
@@ -450,8 +472,12 @@ export default function Navbar({ onMenuClick }) {
               theme === 'light' ? 'hover:bg-navy-50' : 'hover:bg-white/[0.04]'
             }`}
           >
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-400 to-cyan-400 flex items-center justify-center">
-              <User className="w-4 h-4 text-navy-900" />
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-400 to-cyan-400 flex items-center justify-center overflow-hidden">
+              {user?.profile_picture ? (
+                <img src={user.profile_picture} alt={user.name} className="w-full h-full object-cover" />
+              ) : (
+                <User className="w-4 h-4 text-navy-900" />
+              )}
             </div>
             <div className="text-left hidden sm:block">
               <p className={`text-sm font-medium leading-tight ${theme === 'light' ? 'text-navy-700' : 'text-white/90'}`}>{user?.name || 'User'}</p>
@@ -467,7 +493,7 @@ export default function Navbar({ onMenuClick }) {
                 exit={{ opacity: 0, y: 8, scale: 0.96 }}
                 transition={{ duration: 0.15 }}
                 className={`absolute right-0 mt-2 w-56 rounded-3xl overflow-hidden ${
-                  theme === 'light' ? 'bg-white border border-navy-100 shadow-lg' : 'glass-card'
+                  theme === 'light' ? 'bg-white border border-navy-100 shadow-lg' : 'dropdown-card'
                 }`}
               >
                 <div className={`p-4 border-b ${theme === 'light' ? 'border-navy-100' : 'border-white/[0.06]'}`}>

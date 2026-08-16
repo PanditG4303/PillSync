@@ -1,13 +1,15 @@
 import {
   Pill, Bell, Target, ScanLine, BarChart3, Bot,
-  PlusCircle, HeartPulse, Shield,
+  PlusCircle, HeartPulse, Shield, Salad, BellRing, Droplets, Activity,
 } from 'lucide-react'
 
 export const quickActions = [
-  { label: 'Add Medicine', icon: Pill, to: '/add-medicine', color: 'bg-primary-50 text-primary-600' },
+  { label: 'Add Medicine', icon: Pill, to: '/medicines', color: 'bg-primary-50 text-primary-600' },
   { label: 'Scan Prescription', icon: ScanLine, to: '/ai-scanner', color: 'bg-secondary-50 text-secondary-600' },
   { label: 'Ask AI Assistant', icon: Bot, to: '/ai-assistant', color: 'bg-accent-50 text-accent-600' },
-  { label: 'Refill Predictions', icon: Target, to: '/refills', color: 'bg-amber-50 text-amber-600' },
+  { label: 'Log Health Vitals', icon: Activity, to: '/health', color: 'bg-amber-50 text-amber-600' },
+  { label: 'Track Nutrition', icon: Salad, to: '/nutrition', color: 'bg-pink-50 text-pink-600' },
+  { label: 'Refill Predictions', icon: Target, to: '/refills', color: 'bg-emerald-50 text-emerald-600' },
 ]
 
 export const landingFeatures = [
@@ -31,11 +33,26 @@ export const aiSuggestedPrompts = [
   'Side effects of Metformin',
   'Medicine interactions',
   'My tomorrow schedule',
+  'Give me a healthy meal plan',
 ]
 
 export const aiChatHistory = [
   {
     role: 'assistant',
-    text: "Hello! I'm your AI medication assistant. I can help you with information about your medications, dosages, side effects, and more. How can I help you today?",
+    text: "Hello! I'm your AI health assistant. I can help you with your medications, dosages, side effects, nutrition, sleep, and more. How can I help you today?",
   },
+]
+
+export const reminderSoundOptions = [
+  { label: 'Chime', tone: { freq: 880, duration: 0.35 } },
+  { label: 'Beep', tone: { freq: 1200, duration: 0.15 } },
+  { label: 'Soft Bell', tone: { freq: 660, duration: 0.5 } },
+]
+
+export const moodOptions = [
+  { value: 1, label: 'Very Low', emoji: '😞' },
+  { value: 2, label: 'Low', emoji: '🙁' },
+  { value: 3, label: 'Okay', emoji: '😐' },
+  { value: 4, label: 'Good', emoji: '🙂' },
+  { value: 5, label: 'Great', emoji: '😄' },
 ]

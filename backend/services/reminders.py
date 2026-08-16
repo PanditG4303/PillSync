@@ -4,10 +4,27 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from core.constants import GRACE_PERIOD_MINUTES, STATUS_MISSED, STATUS_PENDING
+from core.constants import (
+    GRACE_PERIOD_MINUTES,
+    ON_TIME_WINDOW_MINUTES,
+    STATUS_MISSED,
+    STATUS_PENDING,
+)
 from core.time_utils import combine_local, now_local, today_local
 from models import MedicationHistory, MedicationSchedule, Medicine
 from services.adherence import AdherenceCalculator
+
+
+def _effective_deadline(record: MedicationHistory) -> datetime:
+    """Latest time a dose can still be taken before it counts as missed.
+
+    A snoozed dose extends the deadline: effective time becomes the snoozed
+    time (plus the grace window) instead of the original scheduled time.
+    """
+    base = record.scheduled_datetime
+    if record.snoozed_until and record.snoozed_until > base:
+        base = record.snoozed_until
+    return base + timedelta(minutes=GRACE_PERIOD_MINUTES)
 
 
 class ReminderService:
@@ -70,21 +87,23 @@ class ReminderService:
         self.db.commit()
 
     def apply_grace_period(self) -> int:
-        cutoff = now_local().replace(tzinfo=None) - timedelta(minutes=GRACE_PERIOD_MINUTES)
+        now = now_local().replace(tzinfo=None)
         pending = (
             self.db.query(MedicationHistory)
             .filter(
                 MedicationHistory.user_id == self.user_id,
                 MedicationHistory.status == STATUS_PENDING,
-                MedicationHistory.scheduled_datetime < cutoff,
             )
             .all()
         )
+        missed = 0
         for record in pending:
-            record.status = STATUS_MISSED
-        if pending:
+            if _effective_deadline(record) < now:
+                record.status = STATUS_MISSED
+                missed += 1
+        if missed:
             self.db.commit()
-        return len(pending)
+        return missed
 
     def refresh(self) -> None:
         self.ensure_today_records()
@@ -100,6 +119,7 @@ class ReminderService:
             "scheduled_datetime": record.scheduled_datetime.isoformat(),
             "taken_datetime": record.taken_datetime.isoformat() if record.taken_datetime else None,
             "status": record.status,
+            "snoozed_until": record.snoozed_until.isoformat() if record.snoozed_until else None,
             "created_at": record.created_at.isoformat() if record.created_at else None,
             "medicine_name": record.medicine.name if record.medicine else None,
             "dosage": record.medicine.dosage if record.medicine else None,
@@ -108,11 +128,12 @@ class ReminderService:
 
     @staticmethod
     def resolve_taken_status(scheduled: datetime, taken_at: datetime | None = None) -> str:
+        """'taken' when taken within the 5-minute on-time window, else 'late'."""
         taken_at = taken_at or now_local().replace(tzinfo=None)
         if getattr(taken_at, "tzinfo", None) is not None:
             taken_at = taken_at.replace(tzinfo=None)
-        grace_end = scheduled + timedelta(minutes=GRACE_PERIOD_MINUTES)
-        return "taken" if taken_at <= grace_end else "late"
+        on_time_end = scheduled + timedelta(minutes=ON_TIME_WINDOW_MINUTES)
+        return "taken" if taken_at <= on_time_end else "late"
 
     @staticmethod
     def compute_stats(records) -> dict:

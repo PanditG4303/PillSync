@@ -91,6 +91,30 @@ function MedicineForm({ initial, onSave, onCancel, loading }) {
       : [{ reminder_time: '08:00', days_of_week: null }],
   })
 
+  const [nameCheck, setNameCheck] = useState(null)
+  const [checkingName, setCheckingName] = useState(false)
+
+  useEffect(() => {
+    if (initial) return
+    const name = form.name.trim()
+    if (name.length < 3) {
+      setNameCheck(null)
+      return
+    }
+    setCheckingName(true)
+    const timer = setTimeout(async () => {
+      try {
+        const res = await API.get('/medicines/check', { params: { name } })
+        setNameCheck(res.data)
+      } catch {
+        setNameCheck(null)
+      } finally {
+        setCheckingName(false)
+      }
+    }, 400)
+    return () => clearTimeout(timer)
+  }, [form.name, initial])
+
   const addTime = () => {
     setForm(prev => ({
       ...prev,
@@ -136,10 +160,31 @@ function MedicineForm({ initial, onSave, onCancel, loading }) {
               placeholder="e.g. Paracetamol"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className={`${isLight ? 'bg-navy-50 border-navy-200 text-navy-700 placeholder:text-navy-300' : ''} glass-input pl-11`}
+              className={`${isLight ? 'bg-navy-50 border-navy-200 text-navy-700 placeholder:text-navy-300' : ''} glass-input pl-11 ${nameCheck?.duplicate ? (isLight ? 'border-red-400' : 'border-red-500/50') : ''}`}
               required
             />
+            {checkingName && (
+              <span className={`absolute right-4 top-1/2 -translate-y-1/2 text-xs ${isLight ? 'text-navy-300' : 'text-white/30'}`}>Checking...</span>
+            )}
           </div>
+          {nameCheck?.duplicate ? (
+            <div className={`mt-2 flex items-start gap-2 text-sm rounded-xl px-3 py-2 ${
+              isLight ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-red-500/10 text-red-400 border border-red-500/20'
+            }`}>
+              <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>
+                <strong>{nameCheck.duplicate.name}</strong> ({nameCheck.duplicate.dosage} {nameCheck.duplicate.dosage_unit}) is already in your medicine list. Edit the existing medicine instead of adding a duplicate.
+              </span>
+            </div>
+          ) : nameCheck?.suggested_correction && (
+            <p className={`mt-2 text-sm ${isLight ? 'text-navy-400' : 'text-white/40'}`}>
+              Did you mean <button
+                type="button"
+                onClick={() => setForm({ ...form, name: nameCheck.suggested_correction })}
+                className={`font-medium underline underline-offset-2 ${isLight ? 'text-emerald-600' : 'text-emerald-400'}`}
+              >{nameCheck.suggested_correction}</button>?
+            </p>
+          )}
         </div>
 
         <div>

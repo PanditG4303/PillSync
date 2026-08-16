@@ -1,6 +1,8 @@
 """Password hashing and JWT authentication."""
 
+import hashlib
 import os
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
@@ -12,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from core.constants import MIN_PASSWORD_LENGTH, VALID_ROLES, resolve_jwt_secret
 from database import get_db
-from models import User
+from models import AuthToken, User
 
 JWT_SECRET = resolve_jwt_secret()
 JWT_ALGORITHM = "HS256"
@@ -41,15 +43,22 @@ def validate_password_strength(password: str) -> Optional[str]:
 
 
 def create_access_token(user_id: int, email: str, role: str = "Patient") -> str:
-    expire = datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRE_HOURS)
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(hours=JWT_EXPIRE_HOURS)
     payload = {
         "sub": str(user_id),
         "email": email,
         "role": role,
+        "jti": uuid.uuid4().hex,
         "exp": expire,
-        "iat": datetime.now(timezone.utc),
+        "iat": now,
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def hash_session_token(token: str) -> str:
+    """Store only a digest of issued tokens in the sessions table."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def decode_access_token(token: str) -> dict:
@@ -84,6 +93,18 @@ def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload",
+        )
+
+    # Session enforcement: if the token was persisted, a revoked session is denied.
+    session_record = (
+        db.query(AuthToken)
+        .filter(AuthToken.token == hash_session_token(credentials.credentials))
+        .first()
+    )
+    if session_record is not None and session_record.used:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session has been revoked. Please log in again.",
         )
 
     user = db.query(User).filter(User.id == user_id).first()

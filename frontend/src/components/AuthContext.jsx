@@ -59,6 +59,19 @@ export function AuthProvider({ children }) {
     return res.data
   }, [])
 
+  const sendOtp = useCallback(async (email) => {
+    const res = await axios.post(`${API_BASE}/auth/otp/send`, { email })
+    return res.data
+  }, [])
+
+  const loginWithOtp = useCallback(async (email, otp) => {
+    const res = await axios.post(`${API_BASE}/auth/otp/verify`, { email, otp })
+    const userData = { ...res.data.user, isGuest: false }
+    setUser(userData)
+    setStoredAuth(userData, res.data.access_token)
+    return res.data
+  }, [])
+
   const register = useCallback(async (name, email, password, confirmPassword, role = 'Patient') => {
     const res = await axios.post(`${API_BASE}/auth/register`, {
       name,
@@ -85,6 +98,18 @@ export function AuthProvider({ children }) {
     clearStoredAuth()
   }, [])
 
+  const refreshUser = useCallback(async () => {
+    try {
+      const res = await API.get('/auth/me')
+      const userData = { ...res.data, isGuest: false }
+      setUser(userData)
+      setStoredAuth(userData, getStoredToken())
+      return userData
+    } catch {
+      return null
+    }
+  }, [])
+
   const forgotPassword = useCallback(async (email) => {
     const res = await axios.post(`${API_BASE}/auth/forgot-password`, { email })
     return res.data
@@ -105,8 +130,11 @@ export function AuthProvider({ children }) {
         isAuthenticated: !!user,
         bootstrapping,
         login,
+        sendOtp,
+        loginWithOtp,
         register,
         logout,
+        refreshUser,
         forgotPassword,
         resetPassword,
       }}
