@@ -21,7 +21,14 @@ from settings import router as settings_router
 from ocr import router as ocr_router
 from refills import router as refills_router
 from assistant import router as assistant_router
+from ai import router as ai_router
+from reports import router as reports_router
 from admin import router as admin_router
+from notifications import router as notifications_router
+from sms import router as sms_router
+from health import router as health_router
+from nutrition import router as nutrition_router
+from dashboard import router as dashboard_router
 from scheduler import start_scheduler, stop_scheduler
 from models import User, DeviceToken
 
@@ -44,7 +51,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="PillSync API",
-    version="3.1.0",
+    version="2.0.0",
     lifespan=lifespan,
     docs_url=None if IS_PRODUCTION else "/docs",
     redoc_url=None if IS_PRODUCTION else "/redoc",
@@ -72,7 +79,14 @@ app.include_router(settings_router)
 app.include_router(ocr_router)
 app.include_router(refills_router)
 app.include_router(assistant_router)
+app.include_router(ai_router)
+app.include_router(reports_router)
 app.include_router(admin_router)
+app.include_router(notifications_router)
+app.include_router(sms_router)
+app.include_router(health_router)
+app.include_router(nutrition_router)
+app.include_router(dashboard_router)
 
 
 class FcmRegisterRequest(BaseModel):
@@ -82,7 +96,7 @@ class FcmRegisterRequest(BaseModel):
 
 @app.get("/")
 def root():
-    return {"message": "PillSync API is running", "version": "3.1.0"}
+    return {"message": "PillSync API is running", "version": "2.0.0"}
 
 
 @app.get("/health")
@@ -108,12 +122,14 @@ def ready():
 
 @app.get("/reports/adherence")
 def get_adherence(
-    period: str = Query("week", pattern="^(week|month)$"),
+    period: str = Query("week", pattern="^(week|month|day)$"),
     patient_id: Optional[int] = Query(None),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     target_id = resolve_target_user_id(db, user, patient_id)
+    if period == "day":
+        return AdherenceCalculator._period_report(db, target_id, 1, "weekday")
     if period == "month":
         return AdherenceCalculator.monthly_report(db, target_id)
     return AdherenceCalculator.weekly_report(db, target_id)

@@ -14,12 +14,36 @@ import httpx
 from fastapi import HTTPException
 
 from core.constants import DISEASE_CATEGORIES, FREQUENCY_TO_TIMES
+from services.ai_config import TASK_OCR, model_for
 
 logger = logging.getLogger("pillsync-ocr")
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_MODEL = "google/gemma-4-26b-a4b-it:free"
 REQUEST_TIMEOUT_SECONDS = 60
+
+# Backup vision models used when the primary OCR model is rate limited or
+# failing. Override with AI_MODEL_OCR_FALLBACKS (comma-separated).
+FALLBACK_OCR_MODELS = [
+    "google/gemma-3-27b-it",
+    "openai/gpt-4o-mini",
+]
+
+
+def _rate_limit_message(response: httpx.Response) -> str:
+    """Surface an actionable message when OpenRouter throttles requests."""
+    try:
+        error = response.json().get("error", {})
+        message = str(error.get("message") or "").lower()
+    except (ValueError, AttributeError):
+        message = ""
+    if "free-models-per-day" in message or "free" in message and "rate limit" in message:
+        return (
+            "Your free AI quota for today is used up (OpenRouter free tier). "
+            "Add credits at openrouter.ai — 10 credits unlock 1000 free requests "
+            "per day — or wait for the daily reset."
+        )
+    return "Prescription scanner is temporarily rate limited. Please try again."
 
 MIME_BY_FORMAT = {
     "JPEG": "image/jpeg",
@@ -84,7 +108,7 @@ EXTRACTION_PROMPT = (
     "Extract ONLY information that is visibly present or reasonably readable from the "
     "prescription.\n"
     "Never invent: medicine names, dosage, strength, quantity, frequency, instructions, "
-    "or reminder times.\n"
+    "duration, doctor notes, or reminder times.\n"
     "If a field cannot be read reliably, return null.\n\n"
     "Understand common prescription abbreviations where reasonably clear:\n"
     "OD = once daily\n"
@@ -110,6 +134,11 @@ EXTRACTION_PROMPT = (
     '      "frequency": "twice_daily",\n'
     '      "frequency_original": "BD",\n'
     '      "instructions": "after meals",\n'
+    '      "duration": "5 days",\n'
+    '      "doctor_notes": "review in 2 weeks",\n'
+    '      "batch_number": "MFR-2025-8812",\n'
+    '      "expiry_date": "12/2026",\n'
+    '      "prescription_date": "2026-07-01",\n'
     '      "times": ["08:00", "20:00"],\n'
     '      "confidence": 0.9\n'
     "    }\n"
@@ -118,9 +147,19 @@ EXTRACTION_PROMPT = (
     "}\n\n"
     "Rules:\n"
     '- "times" must contain ONLY exact times explicitly written on the prescription '
-    "(for example \"8 AM and 8 PM\"). Otherwise return an empty array.\n"
+    '(for example "8 AM and 8 PM"). Otherwise return an empty array.\n'
     '- "frequency" must be one of: once_daily, twice_daily, thrice_daily, '
     "four_times_daily, bedtime, as_needed. Use null if unclear.\n"
+    '- "duration" is the treatment course when written on the prescription (for '
+    'example "for 5 days", "1 week", "10 days"). Use null if not present.\n'
+    '- "doctor_notes" are the doctor\'s free-text notes on the prescription (for '
+    'example "come back in 2 weeks", "avoid grapefruit"). Use null if not present.\n'
+    '- "batch_number" is the manufacturer batch/lot number when visible (for '
+    'example "LOT 4821", "Batch #8823"). Use null if not present.\n'
+    '- "expiry_date" is the expiry date when visible and written on the pack or '
+    "prescription (e.g. \"12/2026\", \"2026-12\"). Use null if not present.\n"
+    '- "prescription_date" is the date the prescription was issued when visible, '
+    'in YYYY-MM-DD format. Use null if not visible.\n'
     '- "dosage_unit" must be one of: mg, mcg, g, ml, IU, or null.\n'
     '- "medicine_type" must be one of: tablet, capsule, liquid, injection, cream, '
     "inhaler, drops, other, or null.\n"
@@ -191,7 +230,7 @@ def _default_times_for_frequency(frequency: str | None) -> list[str]:
     return [FREQUENCY_DEFAULT_SLOT] * count
 
 
-def _normalize_medicine(item: Any, index: int) -> dict[str, Any]:
+def _normalize_medicine(item: Any, index: int, default_times_source: str = "system") -> dict[str, Any]:
     if not isinstance(item, dict):
         raise ValueError(f"Medicine entry {index} is not an object")
 
@@ -215,14 +254,21 @@ def _normalize_medicine(item: Any, index: int) -> dict[str, Any]:
         frequency_original = str(frequency_original).strip() or None
 
     times: list[str] = []
+    explicit_times: list[str] = []
     raw_times = item.get("times") or []
     for t in raw_times:
         normalized = _normalize_time(t)
-        if normalized and normalized not in times:
-            times.append(normalized)
+        if normalized and normalized not in explicit_times:
+            explicit_times.append(normalized)
 
     # Do NOT invent reminder times: use defaults only as editable UI slots.
-    if not times:
+    times_defaulted = not explicit_times
+    if explicit_times:
+        times = explicit_times
+    elif default_times_source == "user":
+        # Preference: the user enters their own reminder times in review.
+        times = []
+    else:
         times = _default_times_for_frequency(frequency)
 
     try:
@@ -260,7 +306,13 @@ def _normalize_medicine(item: Any, index: int) -> dict[str, Any]:
         "quantity": quantity,
         "quantity_per_dose": quantity_per_dose,
         "instructions": str(item.get("instructions") or "").strip(),
+        "duration": str(item.get("duration") or "").strip(),
+        "doctor_notes": str(item.get("doctor_notes") or "").strip(),
+        "batch_number": str(item.get("batch_number") or "").strip(),
+        "expiry_date": str(item.get("expiry_date") or "").strip(),
+        "prescription_date": str(item.get("prescription_date") or "").strip(),
         "times": times,
+        "times_defaulted": times_defaulted,
         "schedules": [{"reminder_time": t, "days_of_week": None} for t in times],
         "confidence": confidence,
     }
@@ -280,91 +332,111 @@ def _extract_json(content: str) -> dict[str, Any]:
 
 
 class OpenRouterExtractor:
-    """Prescription extraction through the OpenRouter multimodal API."""
+    """Prescription extraction through the OpenRouter multimodal API.
+
+    Tries the configured OCR model first, then falls back to backup models
+    (defaults or AI_MODEL_OCR_FALLBACKS) so a rate-limited or failing model
+    never blocks scanning.
+    """
 
     def __init__(self, api_key: str, model: str):
         self.api_key = api_key
         self.model = model
 
+    def _models(self) -> list[str]:
+        chain = [self.model]
+        configured = os.getenv("AI_MODEL_OCR_FALLBACKS", "").strip()
+        if configured:
+            chain += [m.strip() for m in configured.split(",") if m.strip()]
+        else:
+            chain += [m for m in FALLBACK_OCR_MODELS if m != self.model]
+        seen: set[str] = set()
+        return [m for m in chain if m and not (m in seen or seen.add(m))]
+
     async def extract(self, data_url: str) -> dict[str, Any]:
-        payload = {
-            "model": self.model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": EXTRACTION_PROMPT},
-                        {"type": "image_url", "image_url": {"url": data_url}},
-                    ],
-                }
-            ],
-            "max_tokens": 1500,
-            "temperature": 0.1,
-        }
+        last_status: int | None = None
+        last_detail = "Prescription AI returned an unexpected error. Please try again."
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
 
-        try:
-            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
-                response = await client.post(OPENROUTER_URL, headers=headers, json=payload)
-        except httpx.TimeoutException as exc:
-            logger.warning("OpenRouter request timed out")
-            raise HTTPException(
-                status_code=504,
-                detail="Prescription AI took too long to respond. Please try again.",
-            ) from exc
-        except httpx.HTTPError as exc:
-            logger.warning("OpenRouter request failed: %s", exc.__class__.__name__)
-            raise HTTPException(
-                status_code=502,
-                detail="Could not reach the prescription AI service. Please try again.",
-            ) from exc
+        for model in self._models():
+            payload = {
+                "model": model,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": EXTRACTION_PROMPT},
+                            {"type": "image_url", "image_url": {"url": data_url}},
+                        ],
+                    }
+                ],
+                "max_tokens": 1500,
+                "temperature": 0.1,
+            }
 
-        if response.status_code == 401 or response.status_code == 403:
-            raise HTTPException(
-                status_code=502,
-                detail="Prescription AI authentication failed. Check OPENROUTER_API_KEY in backend/.env.",
-            )
-        if response.status_code == 429:
-            raise HTTPException(
-                status_code=429,
-                detail="Prescription scanner is temporarily rate limited. Please try again.",
-            )
-        if response.status_code >= 500:
-            raise HTTPException(
-                status_code=502,
-                detail="Prescription AI service is temporarily unavailable. Please try again.",
-            )
-        if response.status_code != 200:
-            raise HTTPException(
-                status_code=502,
-                detail="Prescription AI returned an unexpected error. Please try again.",
-            )
+            try:
+                async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
+                    response = await client.post(OPENROUTER_URL, headers=headers, json=payload)
+            except httpx.TimeoutException as exc:
+                logger.warning("OpenRouter request timed out (%s)", model)
+                raise HTTPException(
+                    status_code=504,
+                    detail="Prescription AI took too long to respond. Please try again.",
+                ) from exc
+            except httpx.HTTPError as exc:
+                logger.warning("OpenRouter request failed: %s (%s)", exc.__class__.__name__, model)
+                raise HTTPException(
+                    status_code=502,
+                    detail="Could not reach the prescription AI service. Please try again.",
+                ) from exc
 
-        try:
-            body = response.json()
-            content = body["choices"][0]["message"]["content"]
-        except (ValueError, KeyError, IndexError, TypeError) as exc:
-            logger.warning("OpenRouter response malformed")
-            raise HTTPException(
-                status_code=502,
-                detail="Prescription AI returned an unreadable response. Please try again.",
-            ) from exc
+            if response.status_code in (401, 403):
+                raise HTTPException(
+                    status_code=502,
+                    detail="Prescription AI authentication failed. Check OPENROUTER_API_KEY in backend/.env.",
+                )
+            if response.status_code == 429:
+                last_status = 429
+                last_detail = _rate_limit_message(response)
+                logger.warning("OCR model %s rate limited: %s", model, last_detail)
+                continue
+            if response.status_code >= 500:
+                last_status = response.status_code
+                last_detail = "Prescription AI service is temporarily unavailable. Please try again."
+                logger.warning("OCR model %s unavailable (HTTP %s)", model, response.status_code)
+                continue
+            if response.status_code != 200:
+                last_status = response.status_code
+                logger.warning("OCR model %s returned HTTP %s", model, response.status_code)
+                continue
 
-        try:
-            return _extract_json(content)
-        except (ValueError, json.JSONDecodeError) as exc:
-            logger.warning("OpenRouter returned malformed JSON")
-            raise HTTPException(
-                status_code=502,
-                detail="Prescription AI returned an unreadable response. Please try again.",
-            ) from exc
+            try:
+                body = response.json()
+                content = body["choices"][0]["message"]["content"]
+            except (ValueError, KeyError, IndexError, TypeError) as exc:
+                logger.warning("OpenRouter response malformed (%s)", model)
+                last_detail = "Prescription AI returned an unreadable response. Please try again."
+                continue
+
+            try:
+                return _extract_json(content)
+            except (ValueError, json.JSONDecodeError) as exc:
+                logger.warning("OpenRouter returned malformed JSON (%s)", model)
+                last_detail = "Prescription AI returned an unreadable response. Please try again."
+                continue
+
+        if last_status == 429:
+            raise HTTPException(status_code=429, detail=last_detail)
+        raise HTTPException(status_code=502, detail=last_detail)
 
 
 def _get_api_key() -> str:
-    key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    from services.ai_config import resolve_api_key
+
+    key = resolve_api_key()
     if not key:
         raise HTTPException(
             status_code=503,
@@ -402,9 +474,15 @@ def _encode_image(image_bytes: bytes) -> str:
 class OCRService:
     """Facade: validate image, extract via OpenRouter, normalize results."""
 
-    async def scan(self, image_bytes: bytes, filename: str = "") -> dict[str, Any]:
+    async def scan(
+        self,
+        image_bytes: bytes,
+        filename: str = "",
+        default_times_source: str = "system",
+    ) -> dict[str, Any]:
         api_key = _get_api_key()
-        model = os.getenv("OPENROUTER_MODEL", "").strip() or DEFAULT_MODEL
+        # Prescription OCR always routes to the Gemma model (default) via the router.
+        model = model_for(TASK_OCR)
         data_url = _encode_image(image_bytes)
 
         parsed = await OpenRouterExtractor(api_key, model).extract(data_url)
@@ -422,7 +500,7 @@ class OCRService:
         if isinstance(raw_medicines, list):
             for index, item in enumerate(raw_medicines):
                 try:
-                    medicines.append(_normalize_medicine(item, index))
+                    medicines.append(_normalize_medicine(item, index, default_times_source))
                 except ValueError as exc:
                     logger.info("Skipping unreadable medicine entry: %s", exc)
 
@@ -445,6 +523,29 @@ class OCRService:
         }
 
 
+PARSER_FREQUENCY_KEYS = {
+    "once daily": "once_daily",
+    "once a day": "once_daily",
+    "od": "once_daily",
+    "daily": "once_daily",
+    "every morning": "once_daily",
+    "twice daily": "twice_daily",
+    "twice a day": "twice_daily",
+    "bid": "twice_daily",
+    "bd": "twice_daily",
+    "thrice daily": "thrice_daily",
+    "three times daily": "thrice_daily",
+    "three times a day": "thrice_daily",
+    "tid": "thrice_daily",
+    "tds": "thrice_daily",
+    "four times daily": "four_times_daily",
+    "qid": "four_times_daily",
+    "every night": "bedtime",
+    "at bedtime": "bedtime",
+    "hs": "bedtime",
+}
+
+
 class PrescriptionParser:
     """Rule-based NLP parser for pasted prescription text (/ocr/parse-text)."""
 
@@ -461,6 +562,12 @@ class PrescriptionParser:
         r"(" + "|".join(re.escape(k) for k in sorted(FREQUENCY_TO_TIMES, key=len, reverse=True)) + r")",
         re.IGNORECASE,
     )
+    DURATION_RE = re.compile(
+        r"(?:for|take\s+for|continue\s+for|course\s+of)?\s*"
+        r"((?:\d+\s*)?(?:days?|weeks?|months?))",
+        re.IGNORECASE,
+    )
+    NOTES_RE = re.compile(r"(?:notes?|remarks?|comments?)\s*[:\-]\s*([A-Za-z][^\n;]*)$", re.IGNORECASE)
 
     def parse(self, text: str) -> list[dict[str, Any]]:
         if not text or not text.strip():
@@ -519,11 +626,14 @@ class PrescriptionParser:
 
     def _build_entry(self, name: str, dose: str, unit: str, snippet: str, full_text: str) -> dict:
         freq_match = self.FREQ_RE.search(snippet)
-        frequency = freq_match.group(1).lower() if freq_match else "once daily"
-        times = FREQUENCY_TO_TIMES.get(frequency, ["08:00"])
+        frequency_raw = freq_match.group(1).lower() if freq_match else "once daily"
+        times = FREQUENCY_TO_TIMES.get(frequency_raw, ["08:00"])
+        frequency = PARSER_FREQUENCY_KEYS.get(frequency_raw) or frequency_raw.replace(" ", "_")
         qty_match = self.QTY_RE.search(snippet)
         quantity = int(qty_match.group(1)) if qty_match else max(len(times) * 15, 30)
         category = self._infer_category(name, snippet)
+        duration_match = self.DURATION_RE.search(full_text)
+        notes_match = self.NOTES_RE.search(full_text)
 
         return {
             "name": name,
@@ -534,8 +644,14 @@ class PrescriptionParser:
             "frequency": frequency,
             "quantity": quantity,
             "quantity_per_dose": 1,
-            "instructions": f"Take {frequency}",
+            "instructions": f"Take {frequency_raw}",
+            "duration": (duration_match.group(0).strip() if duration_match else ""),
+            "doctor_notes": (notes_match.group(1).strip() if notes_match else ""),
+            "batch_number": "",
+            "expiry_date": "",
+            "prescription_date": "",
             "times": list(times),
+            "times_defaulted": True,
             "schedules": [{"reminder_time": t, "days_of_week": None} for t in times],
             "confidence": 0.92 if name in KNOWN_MEDICINES else 0.75,
         }

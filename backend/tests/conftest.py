@@ -7,6 +7,10 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 # Force SQLite for test environment
 os.environ["ENVIRONMENT"] = "testing"
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+# Never send real emails from tests - OTP tests rely on dev-mode codes
+os.environ["SMTP_HOST"] = ""
+os.environ["SMTP_USER"] = ""
+os.environ["SMTP_PASSWORD"] = ""
 
 from sqlalchemy.pool import StaticPool
 

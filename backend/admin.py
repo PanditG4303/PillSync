@@ -2,7 +2,7 @@
 
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
 from core.constants import ROLE_ADMIN, VALID_ROLES
@@ -21,6 +21,10 @@ class UpdateRoleRequest(BaseModel):
 class AdminAssignRequest(BaseModel):
     caregiver_id: int
     patient_id: int
+
+
+class AiKeyRequest(BaseModel):
+    api_key: str = Field(..., min_length=1, max_length=256)
 
 
 def _user_dict(u: User) -> dict:
@@ -162,3 +166,72 @@ def delete_assignment(
     db.delete(assignment)
     db.commit()
     return {"message": "Assignment removed successfully"}
+
+
+# ----------------------------------------------------------------------
+# AI service key management (single shared key, UI-managed)
+# ----------------------------------------------------------------------
+
+@router.get("/ai-keys")
+def get_ai_key_status(
+    admin: User = Depends(require_roles(ROLE_ADMIN)),
+):
+    from services import ai_config
+
+    return {
+        "configured": ai_config.is_configured(),
+        "source": ai_config.key_source(),
+        "masked_key": ai_config.masked_api_key(),
+    }
+
+
+@router.put("/ai-keys")
+def set_ai_key(
+    payload: AiKeyRequest,
+    admin: User = Depends(require_roles(ROLE_ADMIN)),
+):
+    from services import ai_config
+
+    ai_config.set_stored_api_key(payload.api_key)
+    return {
+        "message": "AI API key saved",
+        "configured": ai_config.is_configured(),
+        "source": ai_config.key_source(),
+        "masked_key": ai_config.masked_api_key(),
+    }
+
+
+@router.delete("/ai-keys")
+def clear_ai_key(
+    admin: User = Depends(require_roles(ROLE_ADMIN)),
+):
+    from services import ai_config
+
+    if ai_config.key_source() == "env":
+        raise HTTPException(
+            status_code=400,
+            detail="The key comes from the environment (.env) and cannot be removed here.",
+        )
+    ai_config.clear_stored_api_key()
+    return {
+        "message": "AI API key removed",
+        "configured": ai_config.is_configured(),
+        "source": ai_config.key_source(),
+        "masked_key": ai_config.masked_api_key(),
+    }
+
+
+@router.post("/ai-keys/test")
+def test_ai_key(
+    admin: User = Depends(require_roles(ROLE_ADMIN)),
+):
+    from services import ai_config
+
+    ok, message = ai_config.test_connection()
+    return {
+        "ok": ok,
+        "message": message,
+        "configured": ai_config.is_configured(),
+        "source": ai_config.key_source(),
+        "masked_key": ai_config.masked_api_key(),
+    }

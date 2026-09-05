@@ -9,6 +9,13 @@ from core.security import get_current_user, resolve_target_user_id
 from database import get_db
 from models import Medicine, MedicationSchedule, User
 from services.medicines import MedicineSerializer
+from services.validation import (
+    canonical_key,
+    find_existing,
+    find_similar,
+    normalize_name,
+    suggest_correction,
+)
 
 router = APIRouter(prefix="/medicines", tags=["Medicines"])
 
@@ -25,6 +32,8 @@ class MedicineCreate(BaseModel):
     medicine_type: str = ""
     disease_category: str = "General"
     instructions: str = ""
+    duration: str = ""
+    doctor_notes: str = ""
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     is_active: bool = True
@@ -42,6 +51,8 @@ class MedicineUpdate(BaseModel):
     medicine_type: Optional[str] = None
     disease_category: Optional[str] = None
     instructions: Optional[str] = None
+    duration: Optional[str] = None
+    doctor_notes: Optional[str] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     is_active: Optional[bool] = None
@@ -70,6 +81,46 @@ def _normalize_category(category: str | None) -> str:
     if category in DISEASE_CATEGORIES:
         return category
     return "Other"
+
+
+def _raise_duplicate(existing: Medicine) -> None:
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=(
+            f'"{existing.name}" is already in your medicine list'
+            f"{f' ({existing.dosage} {existing.dosage_unit})' if existing.dosage else ''}. "
+            "Edit the existing medicine instead of adding a duplicate."
+        ),
+    )
+
+
+@router.get("/check")
+def check_medicine_name(
+    name: str = Query(..., min_length=1),
+    patient_id: Optional[int] = Query(None),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Live duplicate/name validation for the medicine form."""
+    target_id = resolve_target_user_id(db, user, patient_id)
+    normalized = normalize_name(name)
+    existing = find_existing(db, target_id, name)
+    suggestions = find_similar(db, target_id, name, limit=3)
+    return {
+        "normalized_name": normalized or name.strip(),
+        "suggested_correction": suggest_correction(name),
+        "duplicate": (
+            {
+                "id": existing.id,
+                "name": existing.name,
+                "dosage": existing.dosage,
+                "dosage_unit": existing.dosage_unit,
+            }
+            if existing
+            else None
+        ),
+        "similar": suggestions,
+    }
 
 
 @router.get("")
@@ -107,17 +158,30 @@ def create_medicine(
     if not data.name.strip():
         raise HTTPException(status_code=400, detail="Medicine name is required")
 
+    name = data.name.strip()
+    existing = find_existing(
+        db,
+        user.id,
+        name,
+        dosage=data.dosage,
+        dosage_unit=data.dosage_unit,
+    )
+    if existing:
+        _raise_duplicate(existing)
+
     qty_total = max(float(data.quantity_total or 0), 0)
     stock = data.stock_remaining if data.stock_remaining is not None else qty_total
 
     medicine = Medicine(
         user_id=user.id,
-        name=data.name.strip(),
+        name=name,
         dosage=data.dosage,
         dosage_unit=data.dosage_unit,
         medicine_type=data.medicine_type,
         disease_category=_normalize_category(data.disease_category),
         instructions=data.instructions,
+        duration=data.duration or "",
+        doctor_notes=data.doctor_notes or "",
         start_date=MedicineSerializer.parse_optional_date(data.start_date),
         end_date=MedicineSerializer.parse_optional_date(data.end_date),
         is_active=data.is_active,
@@ -153,6 +217,16 @@ def update_medicine(
         name = (updates["name"] or "").strip()
         if not name:
             raise HTTPException(status_code=400, detail="Medicine name cannot be empty")
+        existing = find_existing(
+            db,
+            medicine.user_id,
+            name,
+            dosage=updates.get("dosage") or medicine.dosage,
+            dosage_unit=updates.get("dosage_unit") or medicine.dosage_unit,
+            exclude_id=medicine.id,
+        )
+        if existing:
+            _raise_duplicate(existing)
         medicine.name = name
     if "dosage" in updates:
         medicine.dosage = updates["dosage"]
@@ -164,6 +238,10 @@ def update_medicine(
         medicine.disease_category = _normalize_category(updates["disease_category"])
     if "instructions" in updates:
         medicine.instructions = updates["instructions"]
+    if "duration" in updates:
+        medicine.duration = (updates["duration"] or "").strip()
+    if "doctor_notes" in updates:
+        medicine.doctor_notes = (updates["doctor_notes"] or "").strip()
     if "start_date" in updates:
         medicine.start_date = MedicineSerializer.parse_optional_date(updates["start_date"])
     if "end_date" in updates:
